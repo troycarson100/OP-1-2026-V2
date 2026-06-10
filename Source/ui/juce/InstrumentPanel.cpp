@@ -182,32 +182,46 @@ namespace
         if (area.isEmpty())
             return;
 
-        const int n = sculpt::ScreenModel::kFilterBands;
-        const float barW = static_cast<float> (area.getWidth()) / static_cast<float> (n);
-        const float maxH = static_cast<float> (area.getHeight());
-        const float baseY = static_cast<float> (area.getBottom());
-
         // Background
         g.setColour (kLcdWaveformBg);
         g.fillRoundedRectangle (area.toFloat(), 3.0f);
 
-        for (int b = 0; b < n; ++b)
-        {
-            const float env  = juce::jlimit (0.0f, 1.0f, screen.filterBandGains[static_cast<size_t> (b)]);
-            const float barH = juce::jmax (1.5f, env * maxH * 0.92f);
-            const float x0   = static_cast<float> (area.getX()) + static_cast<float> (b) * barW;
-            juce::Rectangle<float> bar (x0 + 0.5f, baseY - barH,
-                                        juce::jmax (1.0f, barW - 1.0f), barH);
-            // Colour intensity follows envelope level
-            g.setColour (kAccent.withAlpha (0.3f + 0.7f * env));
-            g.fillRoundedRectangle (bar, 1.0f);
-        }
-
-        // Idle state: show scale pitch markers when no audio
         if (! screen.filterSpectralMode)
         {
-            g.setColour (kMeter.withAlpha (0.5f));
-            g.drawText ("LPF / BP / HP", area.toFloat(), juce::Justification::centred, false);
+            // LPF / BP / HP mode — show a static label
+            g.setColour (kText.withAlpha (0.45f));
+            g.setFont (juce::FontOptions (12.0f));
+            g.drawText ("LP / BP / HP", area.toFloat(), juce::Justification::centred, false);
+            return;
+        }
+
+        const int   n     = sculpt::ScreenModel::kFilterBands;
+        const float barW  = static_cast<float> (area.getWidth()) / static_cast<float> (n);
+        const float maxH  = static_cast<float> (area.getHeight());
+        const float baseY = static_cast<float> (area.getBottom());
+        const float tickH = juce::jmax (2.0f, maxH * 0.04f);
+
+        for (int b = 0; b < n; ++b)
+        {
+            const float x0 = static_cast<float> (area.getX()) + static_cast<float> (b) * barW;
+            const float bw = juce::jmax (1.0f, barW - 1.0f);
+
+            // Idle tuning grid: faint tick at each band position
+            g.setColour (kText.withAlpha (0.18f));
+            g.fillRect (juce::Rectangle<float> (x0 + 0.5f, baseY - tickH, bw, tickH));
+
+            // Active bar: getBandEnvelope already returns 0..1 normalized
+            const float env  = juce::jlimit (0.0f, 1.0f,
+                                             screen.filterBandGains[static_cast<size_t> (b)]);
+            if (env < 0.01f)
+                continue;
+
+            const float barH = env * maxH * 0.94f;
+            juce::Rectangle<float> bar (x0 + 0.5f, baseY - barH, bw, barH);
+
+            // Gradient-like colour: brighter and more accent-coloured at the top
+            g.setColour (kAccent.withAlpha (0.25f + 0.75f * env));
+            g.fillRoundedRectangle (bar, 1.0f);
         }
     }
 } // namespace
