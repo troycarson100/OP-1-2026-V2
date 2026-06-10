@@ -94,9 +94,29 @@ void Track::updateParameters (const ParameterState& state, int trackIndex)
     engine_.getGranular().setParams (gp);
     engine_.setGrainMix (gp.mix);
 
-    engine_.getFilter().setParams (get (ParameterId::FilterCutoff),
-                                   get (ParameterId::FilterResonance),
-                                   get (ParameterId::FilterMix));
+    {
+        const bool spectral = get (ParameterId::FilterMode) > 0.5f;
+        engine_.setSpectralMode (spectral);
+
+        const float cutoff = get (ParameterId::FilterCutoff);
+        const float res    = get (ParameterId::FilterResonance);
+        const float mix    = get (ParameterId::FilterMix);
+        const float decay  = get (ParameterId::FilterDecay);
+        const float pitch  = get (ParameterId::FilterPitch);
+        const float scale  = get (ParameterId::FilterScale);
+
+        if (spectral)
+        {
+            engine_.getSpectralFilter().setParams (cutoff, res, decay, pitch, scale, mix);
+            engine_.getFilter().setParams (cutoff, res, 0.0f);    // silenced
+        }
+        else
+        {
+            // FilterDecay is repurposed as SVF type (LP/BP/HP) in LPF mode.
+            engine_.getFilter().setParams (cutoff, res, mix, decay);
+            engine_.getSpectralFilter().setParams (cutoff, res, decay, pitch, scale, 0.0f); // silenced
+        }
+    }
 
     engine_.getColor().setParams (get (ParameterId::ColorDrive),
                                   get (ParameterId::ColorTone),

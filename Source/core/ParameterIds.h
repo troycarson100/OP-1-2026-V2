@@ -40,6 +40,10 @@ enum class ParameterId : int
     FilterCutoff,
     FilterResonance,
     FilterMix,
+    FilterMode,    // 0 = LPF/BP/HP (SVF), 1 = Spectral resonator bank
+    FilterDecay,   // Spectral: pole radius / ring time. LPF: SVF type (0=LP, 0.5=BP, 1=HP)
+    FilterPitch,   // Spectral: semitone transpose of resonator bank (0.5 = 0 semitones)
+    FilterScale,   // Spectral: scale quantization (normalized index into FilterScale enum)
 
     ColorDrive,
     ColorTone,
@@ -91,6 +95,10 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::FilterCutoff:    return 0.80f;
         case ParameterId::FilterResonance: return 0.20f;
         case ParameterId::FilterMix:       return 1.0f;
+        case ParameterId::FilterMode:      return 0.0f;   // LPF by default
+        case ParameterId::FilterDecay:     return 0.35f;  // moderate ring / LP type
+        case ParameterId::FilterPitch:     return 0.5f;   // 0 semitones
+        case ParameterId::FilterScale:     return 0.0f;   // Free
         case ParameterId::ColorDrive:      return 0.15f;
         case ParameterId::ColorTone:       return 0.5f;
         case ParameterId::ColorMix:        return 0.30f;
@@ -121,8 +129,13 @@ namespace map
     inline float grainDensityHz (float n)    { return 1.0f + n * n * 59.0f; }    // 1 .. 60 grains/s
     inline float grainPitchRatio (float n)   { return semitonesToRatio ((n - 0.5f) * 24.0f); } // +/- 1 octave
 
-    inline float filterCutoffHz (float n)    { return 40.0f * std::pow (2.0f, n * 8.3f); }     // ~40Hz .. ~12.6kHz
-    inline float filterResonance (float n)   { return 0.5f + n * 9.0f; }                       // Q
+    inline float filterCutoffHz (float n)    { return 40.0f * std::pow (2.0f, n * 8.3f); }        // ~40Hz .. ~12.6kHz
+    inline float filterResonance (float n)   { return 0.5f + n * 9.0f; }                          // SVF Q
+    // Spectral: pole radius r in [0.92, 0.9998] — controls ring/decay time.
+    // r = 0.92 → ~3ms ring at 44100; r = 0.9998 → ~1.1s ring.
+    inline float spectralPoleRadius (float n) { return 0.92f + n * 0.0798f; }
+    // Spectral: semitone transpose [-24, +24].
+    inline float filterPitchSemitones (float n) { return (n - 0.5f) * 48.0f; }
 
     inline float colorDriveGain (float n)    { return 1.0f + n * 9.0f; }
     inline float spaceFeedback (float n)     { return n * 0.85f; }
@@ -154,8 +167,12 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::GrainSpread:     return "Grain Spread";
         case ParameterId::GrainMix:        return "Grain Mix";
         case ParameterId::FilterCutoff:    return "Filter Cutoff";
-        case ParameterId::FilterResonance: return "Filter Resonance";
+        case ParameterId::FilterResonance: return "Resonance";
         case ParameterId::FilterMix:       return "Filter Mix";
+        case ParameterId::FilterMode:      return "Filter Mode";
+        case ParameterId::FilterDecay:     return "Decay/Slope";
+        case ParameterId::FilterPitch:     return "Pitch";
+        case ParameterId::FilterScale:     return "Scale";
         case ParameterId::ColorDrive:      return "Color Drive";
         case ParameterId::ColorTone:       return "Color Tone";
         case ParameterId::ColorMix:        return "Color Mix";

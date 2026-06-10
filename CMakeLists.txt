@@ -61,6 +61,7 @@ target_sources(SculptSampler PRIVATE
     Source/audio/GrainVoice.cpp
     Source/audio/GrainPool.cpp
     Source/audio/FilterStage.cpp
+    Source/audio/SpectralFilterStage.cpp
     Source/audio/ColorStage.cpp
     Source/audio/SpaceStage.cpp
     Source/audio/Mixer.cpp

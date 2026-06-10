@@ -41,6 +41,9 @@ public:
     MaterialSource&       getMaterial()       { return material_; }
     const MaterialSource& getMaterial() const { return material_; }
 
+    TrackEngine&       getEngine()       { return engine_; }
+    const TrackEngine& getEngine() const { return engine_; }
+
     // Message thread: replaces material audio (used after decoding a file).
     void replaceMaterialStereo (const float* left, const float* right, int numFrames);
 

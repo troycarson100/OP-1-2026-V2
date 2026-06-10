@@ -325,6 +325,20 @@ void Engine::updateScreenModel()
         ++visible;
     }
     screen_.numVisibleParams = visible;
+
+    // Spectral filter band display for the Filter page.
+    const bool spectral = params_.effective (selected, ParameterId::FilterMode) > 0.5f;
+    screen_.filterSpectralMode = spectral;
+    if (spectral)
+    {
+        const auto& sf = tracks_[static_cast<size_t> (selected)].getEngine().getSpectralFilter();
+        for (int b = 0; b < ScreenModel::kFilterBands; ++b)
+            screen_.filterBandGains[static_cast<size_t> (b)] = sf.getBandEnvelope (b);
+    }
+    else
+    {
+        screen_.filterBandGains.fill (0.0f);
+    }
 }
 
 const SampleBuffer& Engine::getTrackMaterialBuffer (int trackIndex) const

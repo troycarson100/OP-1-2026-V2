@@ -1,6 +1,7 @@
 #include "InstrumentPanel.h"
 #include "EditorColours.h"
 #include "../PageModel.h"
+#include "../../core/FilterScales.h"
 
 namespace
 {
@@ -136,6 +137,40 @@ namespace
             drawOneTrackMeter (g, meterArea.removeFromTop (rowHeight), screen, t);
         drawMasterMeter (g, meterArea.removeFromTop (rowHeight), screen);
     }
+    void drawFilterBands (juce::Graphics& g, juce::Rectangle<int> area,
+                          const sculpt::ScreenModel& screen)
+    {
+        if (area.isEmpty())
+            return;
+
+        const int n = sculpt::ScreenModel::kFilterBands;
+        const float barW = static_cast<float> (area.getWidth()) / static_cast<float> (n);
+        const float maxH = static_cast<float> (area.getHeight());
+        const float baseY = static_cast<float> (area.getBottom());
+
+        // Background
+        g.setColour (kLcdWaveformBg);
+        g.fillRoundedRectangle (area.toFloat(), 3.0f);
+
+        for (int b = 0; b < n; ++b)
+        {
+            const float env  = juce::jlimit (0.0f, 1.0f, screen.filterBandGains[static_cast<size_t> (b)]);
+            const float barH = juce::jmax (1.5f, env * maxH * 0.92f);
+            const float x0   = static_cast<float> (area.getX()) + static_cast<float> (b) * barW;
+            juce::Rectangle<float> bar (x0 + 0.5f, baseY - barH,
+                                        juce::jmax (1.0f, barW - 1.0f), barH);
+            // Colour intensity follows envelope level
+            g.setColour (kAccent.withAlpha (0.3f + 0.7f * env));
+            g.fillRoundedRectangle (bar, 1.0f);
+        }
+
+        // Idle state: show scale pitch markers when no audio
+        if (! screen.filterSpectralMode)
+        {
+            g.setColour (kMeter.withAlpha (0.5f));
+            g.drawText ("LPF / BP / HP", area.toFloat(), juce::Justification::centred, false);
+        }
+    }
 } // namespace
 
 void InstrumentPanel::setWaveformEnvelope (const float* data, int numBins)
@@ -186,6 +221,7 @@ void InstrumentPanel::paint (juce::Graphics& g)
     g.drawText (header, area.removeFromTop (18), juce::Justification::centredLeft);
 
     const bool materialPage = (screen.selectedPage == sculpt::Page::Material);
+    const bool filterPage   = (screen.selectedPage == sculpt::Page::Filter);
 
     if (materialPage)
     {
@@ -258,6 +294,13 @@ void InstrumentPanel::paint (juce::Graphics& g)
         area.removeFromTop (4);
         drawOneTrackMeter (g, area.removeFromTop (rowH), screen, st);
         drawMasterMeter (g, area.removeFromTop (rowH), screen);
+    }
+    else if (filterPage)
+    {
+        // Filter page: band spectrum display (top half) + value grid (bottom half).
+        const int bandDisplayH = juce::jlimit (50, 160, juce::roundToInt (area.getHeight() * 0.45f));
+        drawFilterBands (g, area.removeFromTop (bandDisplayH), screen);
+        area.removeFromTop (6);
     }
     else
     {

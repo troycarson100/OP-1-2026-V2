@@ -38,6 +38,12 @@ struct ScreenModel
     std::array<const char*, kMaxParamsPerPage> paramNames {};
     std::array<float, kMaxParamsPerPage> paramValues {};
     int numVisibleParams = 0;
+
+    // Filter page: per-band envelope for the spectral resonator display (32 bands).
+    // All zero when in LPF mode. Size matches SpectralFilterStage::kNumBands.
+    static constexpr int kFilterBands = 32;
+    std::array<float, kFilterBands> filterBandGains {};
+    bool filterSpectralMode = false;
 };
 
 } // namespace sculpt

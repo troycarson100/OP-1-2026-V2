@@ -4,6 +4,7 @@
 #include "TapePlayer.h"
 #include "GranularEngine.h"
 #include "FilterStage.h"
+#include "SpectralFilterStage.h"
 #include "ColorStage.h"
 #include "SpaceStage.h"
 #include "../util/Constants.h"
@@ -24,14 +25,19 @@ public:
     void prepare (double sampleRate);
     void reset();
 
-    TapePlayer&     getTape()     { return tape_; }
-    GranularEngine& getGranular() { return granular_; }
-    FilterStage&    getFilter()   { return filter_; }
-    ColorStage&     getColor()    { return color_; }
-    SpaceStage&     getSpace()    { return space_; }
+    TapePlayer&          getTape()           { return tape_; }
+    GranularEngine&      getGranular()       { return granular_; }
+    FilterStage&         getFilter()         { return filter_; }
+    SpectralFilterStage& getSpectralFilter() { return spectralFilter_; }
+    ColorStage&          getColor()          { return color_; }
+    SpaceStage&          getSpace()          { return space_; }
 
-    const TapePlayer&     getTape() const     { return tape_; }
-    const GranularEngine& getGranular() const { return granular_; }
+    const TapePlayer&          getTape()           const { return tape_; }
+    const GranularEngine&      getGranular()       const { return granular_; }
+    const SpectralFilterStage& getSpectralFilter() const { return spectralFilter_; }
+
+    // Selects which filter runs in process(). false = LPF/BP/HP, true = Spectral.
+    void setSpectralMode (bool spectral) { spectralMode_ = spectral; }
 
     void setMaterialLevel (float level01) { materialLevel_.setTarget (level01); }
     void setGrainMix (float mix01)        { grainMix_.setTarget (mix01); }
@@ -40,11 +46,14 @@ public:
     void process (const SampleBuffer& material, float* outL, float* outR, int numSamples);
 
 private:
-    TapePlayer     tape_;
-    GranularEngine granular_;
-    FilterStage    filter_;
-    ColorStage     color_;
-    SpaceStage     space_;
+    TapePlayer           tape_;
+    GranularEngine       granular_;
+    FilterStage          filter_;
+    SpectralFilterStage  spectralFilter_;
+    ColorStage           color_;
+    SpaceStage           space_;
+
+    bool spectralMode_ = false;
 
     SmoothedValue materialLevel_;
     SmoothedValue grainMix_;

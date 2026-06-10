@@ -45,6 +45,10 @@ namespace bridge
             case P::FilterCutoff:    suffix = "filterCutoff"; break;
             case P::FilterResonance: suffix = "filterResonance"; break;
             case P::FilterMix:       suffix = "filterMix"; break;
+            case P::FilterMode:      suffix = "filterMode"; break;
+            case P::FilterDecay:     suffix = "filterDecay"; break;
+            case P::FilterPitch:     suffix = "filterPitch"; break;
+            case P::FilterScale:     suffix = "filterScale"; break;
             case P::ColorDrive:      suffix = "colorDrive"; break;
             case P::ColorTone:       suffix = "colorTone"; break;
             case P::ColorMix:        suffix = "colorMix"; break;
