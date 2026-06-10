@@ -146,7 +146,7 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
 
     rebuildPageControls();
     startTimerHz (30);
-    setSize (980, 640);
+    setSize (980, 840);
 }
 
 int SculptSamplerAudioProcessorEditor::getSelectedTrackFromParameter() const
@@ -306,10 +306,10 @@ void SculptSamplerAudioProcessorEditor::resized()
     selectLabel_.setBounds (selectCol.removeFromTop (20));
     selectSlider_.setBounds (selectCol.reduced (4, 4));
 
-    const int knobMinH = 168;
-    const int lcdMinH = 200;
+    const int knobMinH = 160;
+    const int lcdMinH = 350;
     const int available = juce::jmax (lcdMinH + knobMinH, lcdKnobStack.getHeight());
-    const int lcdH = juce::jlimit (lcdMinH, 320, juce::roundToInt (available * 0.52f));
+    const int lcdH = juce::jlimit (lcdMinH, 440, juce::roundToInt (available * 0.65f));
 
     auto lcdBounds = lcdKnobStack.removeFromTop (lcdH);
     instrumentPanel_.setBounds (lcdBounds);

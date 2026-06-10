@@ -6,6 +6,12 @@ namespace
 {
     using namespace sculpt_editor;
 
+    // Fixed height reserved at the bottom of the LCD for the 2x4 VALUE readout grid.
+    // Two rows, each with a name label and a numeric value line.
+    constexpr int kValueGridH = 90;
+    // Waveform height: fraction of what remains above the reserved value grid.
+    constexpr float kWaveformFraction = 0.45f;
+
     void drawLoopRegion (juce::Graphics& g, juce::Rectangle<float> rect, float lo01, float hi01)
     {
         float lo = juce::jmin (lo01, hi01);
@@ -183,15 +189,61 @@ void InstrumentPanel::paint (juce::Graphics& g)
 
     if (materialPage)
     {
-        const int remainingH = area.getHeight();
-        const int wfH = juce::jlimit (100, 200, juce::roundToInt (remainingH * 0.36f));
+        // Reserve the value grid from the bottom first so it is always visible.
+        const int valueH = juce::jmin (kValueGridH, area.getHeight());
+        auto valueArea = area.removeFromBottom (valueH);
+
+        // Draw the 2x4 VALUE readout cells in the reserved bottom strip.
+        {
+            const int cellW = valueArea.getWidth() / 4;
+            const int cellH = valueArea.getHeight() / 2;
+            for (int slot = 0; slot < 8; ++slot)
+            {
+                const int col = slot % 4;
+                const int row = slot / 4;
+                auto cell = juce::Rectangle<int> (valueArea.getX() + col * cellW,
+                                                  valueArea.getY() + row * cellH,
+                                                  cellW, cellH).reduced (3, 2);
+                g.setColour (kBackground);
+                g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+
+                if (slot < screen.numVisibleParams)
+                {
+                    const auto ps = static_cast<size_t> (slot);
+                    const char* name = screen.paramNames[ps];
+                    const float v = juce::jlimit (0.0f, 1.0f, screen.paramValues[ps]);
+                    g.setColour (kText.withAlpha (0.85f));
+                    g.setFont (juce::FontOptions (10.0f));
+                    g.drawText (name != nullptr ? name : "?",
+                                cell.removeFromTop (cell.getHeight() / 2),
+                                juce::Justification::centred, true);
+                    g.setColour (kAccent);
+                    g.setFont (juce::FontOptions (12.0f));
+                    g.drawText (juce::String (v, 3), cell, juce::Justification::centred, true);
+                }
+                else
+                {
+                    g.setColour (kText.withAlpha (0.35f));
+                    g.drawText ("-", cell, juce::Justification::centred, true);
+                }
+            }
+        }
+
+        // Split what remains above into: waveform, strip, meters.
         const int stripH = 24;
-        const int rowH = 28;
+        const int rowH   = 28;
+        const int meterH = 4 + rowH + rowH + 4; // gap + 2 rows + trailing gap
+        const int topBudget = area.getHeight();
+
+        // Waveform gets a fraction of what's left after strip and meters are reserved.
+        const int fixedAbove = stripH + meterH;
+        const int wfMax      = juce::jmax (0, topBudget - fixedAbove);
+        const int wfH        = juce::jlimit (0, wfMax,
+                                  juce::roundToInt (static_cast<float> (topBudget) * kWaveformFraction));
 
         auto wfArea = area.removeFromTop (wfH).toFloat().reduced (1.0f, 2.0f);
         g.setColour (kLcdWaveformBg);
         g.fillRoundedRectangle (wfArea, 3.0f);
-
         drawLoopRegion (g, wfArea, screen.materialLoopStart01, screen.materialLoopEnd01);
         drawSymmetricEnvelope (g, wfArea, waveformPeaks_);
 
@@ -206,7 +258,6 @@ void InstrumentPanel::paint (juce::Graphics& g)
         area.removeFromTop (4);
         drawOneTrackMeter (g, area.removeFromTop (rowH), screen, st);
         drawMasterMeter (g, area.removeFromTop (rowH), screen);
-        area.removeFromTop (6);
     }
     else
     {
@@ -216,38 +267,41 @@ void InstrumentPanel::paint (juce::Graphics& g)
         area.removeFromTop (6);
     }
 
-    // 2x4 VALUE readouts (slots 1-8)
-    g.setFont (juce::FontOptions (11.0f));
-    const int cellW = area.getWidth() / 4;
-    const int cellH = juce::jmax (36, area.getHeight() / 2);
-
-    for (int slot = 0; slot < 8; ++slot)
+    // 2x4 VALUE readouts for non-Material pages (Material draws its own grid above).
+    if (! materialPage)
     {
-        const int col = slot % 4;
-        const int row = slot / 4;
-        juce::Rectangle<int> cell (area.getX() + col * cellW, area.getY() + row * cellH, cellW, cellH);
-        cell = cell.reduced (3, 2);
+        g.setFont (juce::FontOptions (11.0f));
+        const int cellW = area.getWidth() / 4;
+        const int cellH = juce::jmax (36, area.getHeight() / 2);
 
-        g.setColour (kBackground);
-        g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+        for (int slot = 0; slot < 8; ++slot)
+        {
+            const int col = slot % 4;
+            const int row = slot / 4;
+            juce::Rectangle<int> cell (area.getX() + col * cellW, area.getY() + row * cellH, cellW, cellH);
+            cell = cell.reduced (3, 2);
 
-        if (slot < screen.numVisibleParams)
-        {
-            const auto ps = static_cast<size_t> (slot);
-            const char* name = screen.paramNames[ps];
-            const float v = juce::jlimit (0.0f, 1.0f, screen.paramValues[ps]);
-            g.setColour (kText.withAlpha (0.85f));
-            g.setFont (juce::FontOptions (10.0f));
-            g.drawText (name != nullptr ? name : "?", cell.removeFromTop (cell.getHeight() / 2),
-                        juce::Justification::centred, true);
-            g.setColour (kAccent);
-            g.setFont (juce::FontOptions (12.0f));
-            g.drawText (juce::String (v, 3), cell, juce::Justification::centred, true);
-        }
-        else
-        {
-            g.setColour (kText.withAlpha (0.35f));
-            g.drawText ("-", cell, juce::Justification::centred, true);
+            g.setColour (kBackground);
+            g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+
+            if (slot < screen.numVisibleParams)
+            {
+                const auto ps = static_cast<size_t> (slot);
+                const char* name = screen.paramNames[ps];
+                const float v = juce::jlimit (0.0f, 1.0f, screen.paramValues[ps]);
+                g.setColour (kText.withAlpha (0.85f));
+                g.setFont (juce::FontOptions (10.0f));
+                g.drawText (name != nullptr ? name : "?", cell.removeFromTop (cell.getHeight() / 2),
+                            juce::Justification::centred, true);
+                g.setColour (kAccent);
+                g.setFont (juce::FontOptions (12.0f));
+                g.drawText (juce::String (v, 3), cell, juce::Justification::centred, true);
+            }
+            else
+            {
+                g.setColour (kText.withAlpha (0.35f));
+                g.drawText ("-", cell, juce::Justification::centred, true);
+            }
         }
     }
 }
