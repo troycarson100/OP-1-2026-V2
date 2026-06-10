@@ -2,6 +2,7 @@
 
 #include <array>
 #include "PageModel.h"
+#include "../core/ParameterIds.h"
 #include "../util/Constants.h"
 
 namespace sculpt
@@ -37,11 +38,12 @@ struct ScreenModel
     // Parameter readout for the selected page/track.
     std::array<const char*, kMaxParamsPerPage> paramNames {};
     std::array<float, kMaxParamsPerPage> paramValues {};
+    std::array<ParameterId, kMaxParamsPerPage> paramIds {};
     int numVisibleParams = 0;
 
-    // Filter page: per-band envelope for the spectral resonator display (32 bands).
+    // Filter page: per-band envelope for the spectral resonator display (48 bands).
     // All zero when in LPF mode. Size matches SpectralFilterStage::kNumBands.
-    static constexpr int kFilterBands = 32;
+    static constexpr int kFilterBands = 48;
     std::array<float, kFilterBands> filterBandGains {};
     bool filterSpectralMode = false;
 };

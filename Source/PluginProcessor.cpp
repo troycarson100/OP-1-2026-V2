@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 #include "util/Constants.h"
+#include "core/FilterScales.h"
 
 #include <vector>
 
@@ -9,6 +10,48 @@ namespace
     // MIDI notes that trigger tracks 1-4 (two octaves for convenience).
     constexpr int kTriggerNoteLow  = 36;
     constexpr int kTriggerNoteHigh = 60;
+
+    juce::StringArray makeFilterScaleChoices()
+    {
+        juce::StringArray a;
+        for (int i = 0; i < static_cast<int> (sculpt::FilterScale::Count); ++i)
+            a.add (sculpt::filterScaleName (static_cast<sculpt::FilterScale> (i)));
+        return a;
+    }
+
+    juce::StringArray makeFilterKeyChoices()
+    {
+        juce::StringArray a;
+        for (int i = 0; i < 12; ++i)
+            a.add (sculpt::filterKeyName (i));
+        return a;
+    }
+
+    juce::StringArray makeFilterModeChoices()
+    {
+        juce::StringArray a;
+        a.add ("LP / BP / HP");
+        a.add ("Ring");
+        return a;
+    }
+
+    int choiceDefaultIndex (sculpt::ParameterId id, int numChoices)
+    {
+        if (numChoices < 2)
+            return 0;
+        const float d = sculpt::parameterDefault (id);
+        return juce::jlimit (0, numChoices - 1,
+                             juce::roundToInt (d * static_cast<float> (numChoices - 1)));
+    }
+
+    void addChoiceParam (juce::AudioProcessorValueTreeState::ParameterLayout& layout,
+                         const juce::String& idString, const juce::String& name,
+                         const juce::StringArray& choices, sculpt::ParameterId id)
+    {
+        const int n = choices.size();
+        layout.add (std::make_unique<juce::AudioParameterChoice> (
+            juce::ParameterID { idString, 1 }, name, choices, choiceDefaultIndex (id, n)));
+    }
 }
 
 SculptSamplerAudioProcessor::SculptSamplerAudioProcessor()
@@ -33,6 +76,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
             juce::NormalisableRange<float> (0.0f, 1.0f, 0.0f), defaultValue));
     };
 
+    const juce::StringArray scaleChoices = makeFilterScaleChoices();
+    const juce::StringArray keyChoices   = makeFilterKeyChoices();
+    const juce::StringArray modeChoices  = makeFilterModeChoices();
+
     for (int i = 0; i < kNumParameters; ++i)
     {
         const auto id = static_cast<ParameterId> (i);
@@ -44,9 +91,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
         else
         {
             for (int t = 0; t < kNumTracks; ++t)
-                addParam (bridge::paramIdString (t, id),
-                          "T" + juce::String (t + 1) + " " + parameterName (id),
-                          parameterDefault (id));
+            {
+                const juce::String pid = bridge::paramIdString (t, id);
+                const juce::String pname = "T" + juce::String (t + 1) + " " + parameterName (id);
+
+                if (id == ParameterId::FilterScale)
+                    addChoiceParam (layout, pid, pname, scaleChoices, id);
+                else if (id == ParameterId::FilterKey)
+                    addChoiceParam (layout, pid, pname, keyChoices, id);
+                else if (id == ParameterId::FilterMode)
+                    addChoiceParam (layout, pid, pname, modeChoices, id);
+                else
+                    addParam (pid, pname, parameterDefault (id));
+            }
         }
     }
 

@@ -79,6 +79,84 @@ inline FilterScale normalizedToFilterScale (float n)
     return static_cast<FilterScale> (idx < 0 ? 0 : (idx >= count ? count - 1 : idx));
 }
 
+// Snap normalized value to the canonical step used by discrete UI / APVTS choices.
+inline float snapNormalizedFilterScale (float n)
+{
+    const int count = static_cast<int> (FilterScale::Count);
+    if (count <= 1)
+        return 0.0f;
+    const int idx = static_cast<int> (n * static_cast<float> (count - 1) + 0.5f);
+    const int clamped = idx < 0 ? 0 : (idx >= count ? count - 1 : idx);
+    return static_cast<float> (clamped) / static_cast<float> (count - 1);
+}
+
+// Tonic pitch class 0=C .. 11=B from normalized 0..1.
+inline int normalizedToKeyIndex (float n)
+{
+    constexpr int kKeys = 12;
+    const float   x     = n < 0.0f ? 0.0f : (n > 1.0f ? 1.0f : n);
+    const int     idx   = static_cast<int> (x * static_cast<float> (kKeys - 1) + 0.5f);
+    return idx < 0 ? 0 : (idx >= kKeys ? kKeys - 1 : idx);
+}
+
+inline float snapNormalizedFilterKey (float n)
+{
+    constexpr int kKeys = 12;
+    const int     k     = normalizedToKeyIndex (n);
+    return static_cast<float> (k) / static_cast<float> (kKeys - 1);
+}
+
+inline const char* filterKeyName (int pitchClass01)
+{
+    static constexpr const char* kNames[12] = {
+        "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"
+    };
+    const int i = pitchClass01 < 0 ? 0 : (pitchClass01 > 11 ? 11 : pitchClass01);
+    return kNames[static_cast<size_t> (i)];
+}
+
+// Nearest MIDI integer whose pitch class belongs to scale rooted at tonicPitchClass.
+inline float snapMidiToScaleGlobal (float midiNote, int tonicPitchClass, FilterScale s)
+{
+    if (s == FilterScale::Free)
+        return midiNote;
+
+    int          count = 0;
+    const int*   iv    = scaleIntervals (s, count);
+    const int    lo    = static_cast<int> (std::floor (midiNote)) - 36;
+    const int    hi    = static_cast<int> (std::ceil (midiNote)) + 36;
+
+    float best     = std::round (midiNote);
+    float bestDist = 1.0e9f;
+
+    const int tonic = ((tonicPitchClass % 12) + 12) % 12;
+
+    for (int n = lo; n <= hi; ++n)
+    {
+        const int pc = ((n % 12) + 12) % 12;
+        bool      ok = false;
+        for (int i = 0; i < count; ++i)
+        {
+            const int spc = (tonic + iv[i] + 120) % 12;
+            if (spc == pc)
+            {
+                ok = true;
+                break;
+            }
+        }
+        if (! ok)
+            continue;
+
+        const float d = std::fabs (static_cast<float> (n) - midiNote);
+        if (d < bestDist)
+        {
+            bestDist = d;
+            best     = static_cast<float> (n);
+        }
+    }
+    return best;
+}
+
 // Snaps a MIDI note (float) to the nearest scale degree relative to rootMidi.
 inline float snapToScaleMidi (float midiNote, int rootMidi, FilterScale s)
 {

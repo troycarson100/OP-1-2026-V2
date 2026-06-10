@@ -1,6 +1,7 @@
 #include "Track.h"
 #include "../core/ParameterIds.h"
 #include "../core/ParameterState.h"
+#include "../core/FilterScales.h"
 #include "../util/Constants.h"
 
 namespace sculpt
@@ -103,18 +104,19 @@ void Track::updateParameters (const ParameterState& state, int trackIndex)
         const float mix    = get (ParameterId::FilterMix);
         const float decay  = get (ParameterId::FilterDecay);
         const float pitch  = get (ParameterId::FilterPitch);
-        const float scale  = get (ParameterId::FilterScale);
+        const float scale  = snapNormalizedFilterScale (get (ParameterId::FilterScale));
+        const float key    = snapNormalizedFilterKey (get (ParameterId::FilterKey));
 
         if (spectral)
         {
-            engine_.getSpectralFilter().setParams (cutoff, res, decay, pitch, scale, mix);
+            engine_.getSpectralFilter().setParams (cutoff, res, decay, pitch, scale, key, mix);
             engine_.getFilter().setParams (cutoff, res, 0.0f);    // silenced
         }
         else
         {
             // FilterDecay is repurposed as SVF type (LP/BP/HP) in LPF mode.
             engine_.getFilter().setParams (cutoff, res, mix, decay);
-            engine_.getSpectralFilter().setParams (cutoff, res, decay, pitch, scale, 0.0f); // silenced
+            engine_.getSpectralFilter().setParams (cutoff, res, decay, pitch, scale, key, 0.0f); // silenced
         }
     }
 

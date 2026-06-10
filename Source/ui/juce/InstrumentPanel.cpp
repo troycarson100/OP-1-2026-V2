@@ -2,6 +2,7 @@
 #include "EditorColours.h"
 #include "../PageModel.h"
 #include "../../core/FilterScales.h"
+#include "../../core/ParameterIds.h"
 
 namespace
 {
@@ -137,6 +138,22 @@ namespace
             drawOneTrackMeter (g, meterArea.removeFromTop (rowHeight), screen, t);
         drawMasterMeter (g, meterArea.removeFromTop (rowHeight), screen);
     }
+    juce::String formatParamCellValue (sculpt::ParameterId id, float v)
+    {
+        using P = sculpt::ParameterId;
+        switch (id)
+        {
+            case P::FilterScale:
+                return sculpt::filterScaleName (sculpt::normalizedToFilterScale (v));
+            case P::FilterKey:
+                return sculpt::filterKeyName (sculpt::normalizedToKeyIndex (v));
+            case P::FilterMode:
+                return (v > 0.5f) ? "Ring" : "LP/BP/HP";
+            default:
+                return juce::String (v, 3);
+        }
+    }
+
     void drawValueGrid (juce::Graphics& g, juce::Rectangle<int> area,
                         const sculpt::ScreenModel& screen)
     {
@@ -166,7 +183,8 @@ namespace
                             juce::Justification::centred, true);
                 g.setColour (kAccent);
                 g.setFont (juce::FontOptions (12.0f));
-                g.drawText (juce::String (v, 3), cell, juce::Justification::centred, true);
+                const auto pid = screen.paramIds[ps];
+                g.drawText (formatParamCellValue (pid, v), cell, juce::Justification::centred, true);
             }
             else
             {

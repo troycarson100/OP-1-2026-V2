@@ -56,6 +56,9 @@ enum class ParameterId : int
     // > 0.5 = arm live input capture into this track's material buffer (plugin input bus).
     CaptureArm,
 
+    // Spectral: tonic pitch class 0=C .. 11=B (normalized steps; use snap in Track).
+    FilterKey,
+
     Count
 };
 
@@ -106,6 +109,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::SpaceFeedback:   return 0.35f;
         case ParameterId::SpaceMix:        return 0.25f;
         case ParameterId::CaptureArm:      return 0.0f;
+        case ParameterId::FilterKey:       return 0.0f;   // C
         default:                           return 0.0f;
     }
 }
@@ -180,6 +184,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::SpaceFeedback:   return "Space Feedback";
         case ParameterId::SpaceMix:        return "Space Mix";
         case ParameterId::CaptureArm:      return "Input Capture";
+        case ParameterId::FilterKey:       return "Key";
         default:                           return "Unknown";
     }
 }

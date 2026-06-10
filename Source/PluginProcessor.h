@@ -56,6 +56,7 @@ namespace bridge
             case P::SpaceFeedback:   suffix = "spaceFeedback"; break;
             case P::SpaceMix:        suffix = "spaceMix"; break;
             case P::CaptureArm:      suffix = "captureArm"; break;
+            case P::FilterKey:       suffix = "filterKey"; break;
             default: break;
         }
 

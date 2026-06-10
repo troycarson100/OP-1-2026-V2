@@ -318,10 +318,12 @@ void Engine::updateScreenModel()
         const ParameterId id = PageModel::parameterForSlot (selectedPage_, slot);
         if (id == ParameterId::Count)
             break;
-        screen_.paramNames[static_cast<size_t> (slot)]  = parameterName (id);
-        screen_.paramValues[static_cast<size_t> (slot)] = isTrackParameter (id)
-                                                            ? params_.effective (selected, id)
-                                                            : params_.effectiveGlobal (id);
+        const auto ss = static_cast<size_t> (slot);
+        screen_.paramIds[ss]   = id;
+        screen_.paramNames[ss]  = parameterName (id);
+        screen_.paramValues[ss] = isTrackParameter (id)
+                                    ? params_.effective (selected, id)
+                                    : params_.effectiveGlobal (id);
         ++visible;
     }
     screen_.numVisibleParams = visible;

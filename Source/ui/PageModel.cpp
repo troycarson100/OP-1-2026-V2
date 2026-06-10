@@ -16,13 +16,13 @@ namespace
         { ParameterId::GrainPosition, ParameterId::GrainSize, ParameterId::GrainDensity,
           ParameterId::GrainPitch, ParameterId::GrainSpray, ParameterId::GrainTexture,
           ParameterId::GrainSpread, ParameterId::GrainMix },
-        // Filter (all 8 slots used)
+        // Filter (8 encoder slots)
         // Slots 0-3: Cutoff, Resonance, Decay/Slope, Pitch
-        // Slots 4-7: Scale, Mode, (blank), Mix
+        // Slots 4-7: Scale, Mode, Key, Mix
         { ParameterId::FilterCutoff,    ParameterId::FilterResonance,
           ParameterId::FilterDecay,     ParameterId::FilterPitch,
           ParameterId::FilterScale,     ParameterId::FilterMode,
-          kEmpty,                       ParameterId::FilterMix },
+          ParameterId::FilterKey,       ParameterId::FilterMix },
         // Color
         { ParameterId::ColorDrive, ParameterId::ColorTone, ParameterId::ColorMix,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
