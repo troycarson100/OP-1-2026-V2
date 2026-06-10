@@ -137,6 +137,45 @@ namespace
             drawOneTrackMeter (g, meterArea.removeFromTop (rowHeight), screen, t);
         drawMasterMeter (g, meterArea.removeFromTop (rowHeight), screen);
     }
+    void drawValueGrid (juce::Graphics& g, juce::Rectangle<int> area,
+                        const sculpt::ScreenModel& screen)
+    {
+        const int cellW = area.getWidth() / 4;
+        const int cellH = area.getHeight() / 2;
+
+        for (int slot = 0; slot < 8; ++slot)
+        {
+            const int col = slot % 4;
+            const int row = slot / 4;
+            auto cell = juce::Rectangle<int> (area.getX() + col * cellW,
+                                              area.getY() + row * cellH,
+                                              cellW, cellH).reduced (3, 2);
+
+            g.setColour (kBackground);
+            g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+
+            if (slot < screen.numVisibleParams)
+            {
+                const auto ps = static_cast<size_t> (slot);
+                const char* name = screen.paramNames[ps];
+                const float v    = juce::jlimit (0.0f, 1.0f, screen.paramValues[ps]);
+                g.setColour (kText.withAlpha (0.85f));
+                g.setFont (juce::FontOptions (10.0f));
+                g.drawText (name != nullptr ? name : "?",
+                            cell.removeFromTop (cell.getHeight() / 2),
+                            juce::Justification::centred, true);
+                g.setColour (kAccent);
+                g.setFont (juce::FontOptions (12.0f));
+                g.drawText (juce::String (v, 3), cell, juce::Justification::centred, true);
+            }
+            else
+            {
+                g.setColour (kText.withAlpha (0.35f));
+                g.drawText ("-", cell, juce::Justification::centred, true);
+            }
+        }
+    }
+
     void drawFilterBands (juce::Graphics& g, juce::Rectangle<int> area,
                           const sculpt::ScreenModel& screen)
     {
@@ -223,55 +262,18 @@ void InstrumentPanel::paint (juce::Graphics& g)
     const bool materialPage = (screen.selectedPage == sculpt::Page::Material);
     const bool filterPage   = (screen.selectedPage == sculpt::Page::Filter);
 
+    // Reserve the fixed value grid strip at the bottom on every page.
+    const int valueH   = juce::jmin (kValueGridH, area.getHeight());
+    auto valueArea     = area.removeFromBottom (valueH);
+
     if (materialPage)
     {
-        // Reserve the value grid from the bottom first so it is always visible.
-        const int valueH = juce::jmin (kValueGridH, area.getHeight());
-        auto valueArea = area.removeFromBottom (valueH);
-
-        // Draw the 2x4 VALUE readout cells in the reserved bottom strip.
-        {
-            const int cellW = valueArea.getWidth() / 4;
-            const int cellH = valueArea.getHeight() / 2;
-            for (int slot = 0; slot < 8; ++slot)
-            {
-                const int col = slot % 4;
-                const int row = slot / 4;
-                auto cell = juce::Rectangle<int> (valueArea.getX() + col * cellW,
-                                                  valueArea.getY() + row * cellH,
-                                                  cellW, cellH).reduced (3, 2);
-                g.setColour (kBackground);
-                g.fillRoundedRectangle (cell.toFloat(), 3.0f);
-
-                if (slot < screen.numVisibleParams)
-                {
-                    const auto ps = static_cast<size_t> (slot);
-                    const char* name = screen.paramNames[ps];
-                    const float v = juce::jlimit (0.0f, 1.0f, screen.paramValues[ps]);
-                    g.setColour (kText.withAlpha (0.85f));
-                    g.setFont (juce::FontOptions (10.0f));
-                    g.drawText (name != nullptr ? name : "?",
-                                cell.removeFromTop (cell.getHeight() / 2),
-                                juce::Justification::centred, true);
-                    g.setColour (kAccent);
-                    g.setFont (juce::FontOptions (12.0f));
-                    g.drawText (juce::String (v, 3), cell, juce::Justification::centred, true);
-                }
-                else
-                {
-                    g.setColour (kText.withAlpha (0.35f));
-                    g.drawText ("-", cell, juce::Justification::centred, true);
-                }
-            }
-        }
-
         // Split what remains above into: waveform, strip, meters.
-        const int stripH = 24;
-        const int rowH   = 28;
-        const int meterH = 4 + rowH + rowH + 4; // gap + 2 rows + trailing gap
+        const int stripH    = 24;
+        const int rowH      = 28;
+        const int meterH    = 4 + rowH + rowH + 4;
         const int topBudget = area.getHeight();
 
-        // Waveform gets a fraction of what's left after strip and meters are reserved.
         const int fixedAbove = stripH + meterH;
         const int wfMax      = juce::jmax (0, topBudget - fixedAbove);
         const int wfH        = juce::jlimit (0, wfMax,
@@ -297,54 +299,15 @@ void InstrumentPanel::paint (juce::Graphics& g)
     }
     else if (filterPage)
     {
-        // Filter page: band spectrum display (top half) + value grid (bottom half).
-        const int bandDisplayH = juce::jlimit (50, 160, juce::roundToInt (area.getHeight() * 0.45f));
+        const int bandDisplayH = juce::jlimit (40, area.getHeight(), area.getHeight() - 4);
         drawFilterBands (g, area.removeFromTop (bandDisplayH), screen);
-        area.removeFromTop (6);
     }
     else
     {
-        const int meterBlockH = juce::jmin (140, juce::jmax (80, area.getHeight() / 2));
-        auto meterArea = area.removeFromTop (meterBlockH);
-        drawAllTrackMeters (g, meterArea, screen);
-        area.removeFromTop (6);
+        const int meterBlockH = juce::jmin (140, juce::jmax (80, area.getHeight()));
+        drawAllTrackMeters (g, area.removeFromTop (meterBlockH), screen);
     }
 
-    // 2x4 VALUE readouts for non-Material pages (Material draws its own grid above).
-    if (! materialPage)
-    {
-        g.setFont (juce::FontOptions (11.0f));
-        const int cellW = area.getWidth() / 4;
-        const int cellH = juce::jmax (36, area.getHeight() / 2);
-
-        for (int slot = 0; slot < 8; ++slot)
-        {
-            const int col = slot % 4;
-            const int row = slot / 4;
-            juce::Rectangle<int> cell (area.getX() + col * cellW, area.getY() + row * cellH, cellW, cellH);
-            cell = cell.reduced (3, 2);
-
-            g.setColour (kBackground);
-            g.fillRoundedRectangle (cell.toFloat(), 3.0f);
-
-            if (slot < screen.numVisibleParams)
-            {
-                const auto ps = static_cast<size_t> (slot);
-                const char* name = screen.paramNames[ps];
-                const float v = juce::jlimit (0.0f, 1.0f, screen.paramValues[ps]);
-                g.setColour (kText.withAlpha (0.85f));
-                g.setFont (juce::FontOptions (10.0f));
-                g.drawText (name != nullptr ? name : "?", cell.removeFromTop (cell.getHeight() / 2),
-                            juce::Justification::centred, true);
-                g.setColour (kAccent);
-                g.setFont (juce::FontOptions (12.0f));
-                g.drawText (juce::String (v, 3), cell, juce::Justification::centred, true);
-            }
-            else
-            {
-                g.setColour (kText.withAlpha (0.35f));
-                g.drawText ("-", cell, juce::Justification::centred, true);
-            }
-        }
-    }
+    // 2x4 VALUE readout grid — same fixed size and position on every page.
+    drawValueGrid (g, valueArea, screen);
 }
