@@ -115,44 +115,44 @@ void SpectralFilterStage::process (float* left, float* right, int numSamples)
     if (numActiveBands_ == 0)
         return;
 
-    // Fetch smoothed targets once per block.
-    const float mixTarget = mix_.skip (numSamples);
-    if (mixTarget < 1.0e-5f)
-    {
-        // Advance remaining smoothers to keep them in sync.
-        resonance_.skip (numSamples);
-        cutoff_.skip    (numSamples);
+    // Advance smoothers once per block and use their end-of-block values for
+    // coefficient computation.  Do NOT also call next() inside the sample loop.
+    const float mixVal      = mix_.skip (numSamples);
+    const float resonanceVal = resonance_.skip (numSamples);
+    const float cutoffNorm  = cutoff_.skip (numSamples);
+
+    if (mixVal < 1.0e-5f)
         return;
-    }
 
-    // peakBoost: Resonance 0..1 → additive gain 0..40.
-    // ×2 compensates the 0.5 peak gain of the normalized BPF, so at res=1
-    // each band adds up to 20 × input amplitude at its centre frequency.
-    const float peakBoost  = resonance_.skip (numSamples) * 40.0f;
-    const float cutoffNorm = cutoff_.skip (numSamples);
-    const float cutoffHz   = map::filterCutoffHz (cutoffNorm);
+    // peakBoost: Resonance 0..1 → additive peak gain per band.
+    // Each BPF has peak output ≈ 0.5 at its centre frequency, so ×2 normalises
+    // that to 1.  Then we scale by 6 for a max of +15 dB per isolated band.
+    // We also normalise by sqrt(numActiveBands) so that the total additive sum
+    // stays bounded regardless of how many bands overlap at a given frequency.
+    const float sqrtBands  = std::sqrt (static_cast<float> (numActiveBands_));
+    const float normFactor = sqrtBands > 0.0f ? 1.0f / sqrtBands : 1.0f;
+    const float peakBoost  = resonanceVal * 6.0f * 2.0f * normFactor;
 
-    // Pre-compute per-band spectral envelope × peak boost.
-    // Envelope: 2-pole LP rolloff centred at cutoffHz.
+    const float cutoffHz = map::filterCutoffHz (cutoffNorm);
+
+    // Pre-compute per-band spectral envelope × peak boost (once per block).
     for (int b = 0; b < kNumBands; ++b)
     {
         auto& c = coeffs_[static_cast<size_t> (b)];
         if (! c.active)
             continue;
 
-        // Reconstruct band centre frequency from a1 coefficient: f = acos(-a1 / (2r)) * fs / 2pi.
-        // It is cheaper to store the frequency, but we only rebuild once per block so this is fine.
-        // We recompute from stored a1 and a2: r = sqrt(a2), cos(w0) = -a1 / (2r).
+        // Recover band centre frequency from stored coefficients.
         const float r     = std::sqrt (c.a2);
         const float cosW0 = clampf (-c.a1 / (2.0f * r), -1.0f, 1.0f);
         const float w0    = std::acos (cosW0);
         const float fHz   = w0 * static_cast<float> (sampleRate_) / kTwoPi;
 
-        // Simple 2-pole LP spectral envelope: high below cutoff, rolls off above.
+        // 2-pole LP spectral envelope: bands below cutoff resonate loudly.
         const float ratio   = fHz / cutoffHz;
         const float envGain = 1.0f / (1.0f + ratio * ratio);
 
-        c.envGain = envGain * peakBoost * 2.0f;  // ×2: compensates 0.5 BPF peak gain
+        c.envGain = envGain * peakBoost;
     }
 
     // Envelope follower release coefficient (~200ms).
@@ -185,10 +185,13 @@ void SpectralFilterStage::process (float* left, float* right, int numSamples)
             env = level > env ? level : (env * envReleaseC);
         }
 
-        const float mix = mix_.next();
-        // Additive: dry signal always passes through; resonance adds peaks on top.
-        left[i]  = xL + sumL * mix;
-        right[i] = xR + sumR * mix;
+        // Additive: dry always passes through; resonance peaks added on top.
+        // Soft-clip the additive sum to prevent digital overload while preserving
+        // the character of heavy resonance.
+        const float safeL = std::tanh (sumL * 0.5f) * 2.0f;
+        const float safeR = std::tanh (sumR * 0.5f) * 2.0f;
+        left[i]  = xL + safeL * mixVal;
+        right[i] = xR + safeR * mixVal;
     }
 
     // Update running peak for LCD normalization.
