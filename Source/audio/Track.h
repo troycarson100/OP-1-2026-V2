@@ -1,0 +1,56 @@
+#pragma once
+
+#include "MaterialSource.h"
+#include "SampleRecorder.h"
+#include "TrackEngine.h"
+#include "Envelope.h"
+
+namespace sculpt
+{
+
+class ParameterState;
+
+// One of the four performance tracks. Owns its material, capture, trigger
+// state and DSP chain. Pulls its normalized parameters from ParameterState
+// once per block - no other class pushes values into the DSP directly.
+class Track
+{
+public:
+    void prepare (double sampleRate, int trackIndex);
+    void reset();
+
+    void trigger();
+    void stop();
+    bool isPlaying() const { return playing_; }
+
+    // Live input capture into the material buffer.
+    void captureInput (const float* const* inputs, int numChannels, int numSamples);
+    void setCaptureArmed (bool armed);
+    bool isCaptureArmed() const { return recorder_.isArmed(); }
+
+    // Sync all per-track parameters (with modulation applied) into the DSP.
+    void updateParameters (const ParameterState& state, int trackIndex);
+
+    // Overwrites outL/outR with this track's output.
+    void process (float* outL, float* outR, int numSamples);
+
+    // 0..1 amount of grain voices in use (for the screen model).
+    float getGrainActivity() const;
+    float getTapePositionNormalized() const;
+
+    MaterialSource&       getMaterial()       { return material_; }
+    const MaterialSource& getMaterial() const { return material_; }
+
+    // Message thread: replaces material audio (used after decoding a file).
+    void replaceMaterialStereo (const float* left, const float* right, int numFrames);
+
+private:
+    MaterialSource material_;
+    SampleRecorder recorder_;
+    TrackEngine    engine_;
+    Envelope       gate_;
+
+    bool playing_ = false;
+};
+
+} // namespace sculpt

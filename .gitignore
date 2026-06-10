@@ -1,0 +1,15 @@
+# Build artifacts
+build/
+cmake-build-*/
+*.o
+*.a
+
+# IDE / OS
+.DS_Store
+.idea/
+.vscode/
+*.xcodeproj
+*.xcworkspace
+
+# JUCE artifacts
+JuceLibraryCode/
