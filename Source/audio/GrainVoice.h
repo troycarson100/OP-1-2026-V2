@@ -23,6 +23,11 @@ public:
     void kill()            { active_ = false; }
     bool isActive() const  { return active_; }
 
+    // Fixed spawn position / length for LCD overlay (does not follow playback read head).
+    float originStartFrame() const { return originStartFrame_; }
+    int   originLength() const     { return originLength_; }
+    float phase01() const;
+
     // Adds the grain into outL/outR. Stops itself when finished.
     void render (const SampleBuffer& buffer, float* outL, float* outR, int numSamples);
 
@@ -34,6 +39,9 @@ private:
     float gainL_     = 0.0f;
     float gainR_     = 0.0f;
     bool  active_    = false;
+
+    float originStartFrame_ = 0.0f;
+    int   originLength_     = 0;
 };
 
 } // namespace sculpt

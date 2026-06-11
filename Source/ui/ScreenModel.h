@@ -2,6 +2,7 @@
 
 #include <array>
 #include "PageModel.h"
+#include "../core/GrainDisplaySlot.h"
 #include "../core/ParameterIds.h"
 #include "../util/Constants.h"
 
@@ -46,6 +47,9 @@ struct ScreenModel
     static constexpr int kFilterBands = 48;
     std::array<float, kFilterBands> filterBandGains {};
     bool filterSpectralMode = false;
+
+    // Granular page: per-grain overlay on the material waveform (pool size).
+    std::array<GrainDisplaySlot, kGrainsPerTrack> grainDisplay {};
 };
 
 } // namespace sculpt

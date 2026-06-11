@@ -1,3 +1,4 @@
+#include <cmath>
 #include "InstrumentPanel.h"
 #include "EditorColours.h"
 #include "../PageModel.h"
@@ -59,6 +60,39 @@ namespace
         g.fillPath (path);
         g.setColour (kWaveformStroke.withAlpha (0.95f));
         g.strokePath (path, juce::PathStrokeType (1.2f));
+    }
+
+    void drawGrainOverlay (juce::Graphics& g, juce::Rectangle<float> wfArea,
+                           const sculpt::ScreenModel& screen)
+    {
+        constexpr int nSlots = sculpt::kGrainsPerTrack;
+        constexpr float twoPi = juce::MathConstants<float>::twoPi;
+
+        for (int i = 0; i < nSlots; ++i)
+        {
+            const auto& slot = screen.grainDisplay[static_cast<size_t> (i)];
+            if (! slot.active)
+                continue;
+
+            const float wobble = 2.5f * std::sin (slot.phase01 * twoPi);
+            const float xL = wfArea.getX() + slot.start01 * wfArea.getWidth() + wobble;
+            const float spanW = juce::jmax (1.0f, slot.len01 * wfArea.getWidth());
+            const float xR = xL + spanW;
+
+            const float alpha = 0.2f + 0.55f * juce::jlimit (0.0f, 1.0f, slot.phase01);
+            const float hue = static_cast<float> (i % 6) / 6.0f;
+            const juce::Colour col = juce::Colour::fromHSV (hue, 0.55f, 0.92f, alpha);
+
+            const float thick = 1.0f + 1.4f * juce::jlimit (0.0f, 1.0f, slot.phase01);
+            g.setColour (col);
+
+            const float y0 = wfArea.getY();
+            const float y1 = wfArea.getBottom();
+            g.drawLine (juce::jlimit (wfArea.getX(), wfArea.getRight(), xL), y0,
+                        juce::jlimit (wfArea.getX(), wfArea.getRight(), xL), y1, thick);
+            g.drawLine (juce::jlimit (wfArea.getX(), wfArea.getRight(), xR), y0,
+                        juce::jlimit (wfArea.getX(), wfArea.getRight(), xR), y1, thick);
+        }
     }
 
     void drawSecondaryStrip (juce::Graphics& g, juce::Rectangle<float> rect,
@@ -292,13 +326,15 @@ void InstrumentPanel::paint (juce::Graphics& g)
     g.drawText (header, area.removeFromTop (18), juce::Justification::centredLeft);
 
     const bool materialPage = (screen.selectedPage == sculpt::Page::Material);
+    const bool granularPage = (screen.selectedPage == sculpt::Page::Granular);
     const bool filterPage   = (screen.selectedPage == sculpt::Page::Filter);
+    const bool waveformPage = materialPage || granularPage;
 
     // Reserve the fixed value grid strip at the bottom on every page.
     const int valueH   = juce::jmin (kValueGridH, area.getHeight());
     auto valueArea     = area.removeFromBottom (valueH);
 
-    if (materialPage)
+    if (waveformPage)
     {
         // Split what remains above into: waveform, strip, meters.
         const int stripH    = 24;
@@ -316,6 +352,8 @@ void InstrumentPanel::paint (juce::Graphics& g)
         g.fillRoundedRectangle (wfArea, 3.0f);
         drawLoopRegion (g, wfArea, screen.materialLoopStart01, screen.materialLoopEnd01);
         drawSymmetricEnvelope (g, wfArea, waveformPeaks_);
+        if (granularPage)
+            drawGrainOverlay (g, wfArea, screen);
 
         auto strip = area.removeFromTop (stripH).toFloat().reduced (1.0f, 1.0f);
         drawSecondaryStrip (g, strip, waveformPeaks_);

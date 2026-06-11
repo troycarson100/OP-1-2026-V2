@@ -234,7 +234,8 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
             static_cast<sculpt::Page> (pg) == currentPage_, juce::dontSendNotification);
 
     auto& engine = processor_.getEngine();
-    if (screen.selectedPage == sculpt::Page::Material)
+    if (screen.selectedPage == sculpt::Page::Material
+        || screen.selectedPage == sculpt::Page::Granular)
     {
         std::array<float, sculpt::kMaterialWaveformBins> env {};
         engine.fillMaterialWaveformEnvelope (track, sculpt::kMaterialWaveformBins, env.data());

@@ -38,6 +38,8 @@ public:
     float getMix() const       { return params_.mix; }
     int   getActiveGrains() const { return pool_.countActive(); }
 
+    void fillGrainDisplay (const SampleBuffer& material, GrainDisplaySlot* out, int maxSlots) const;
+
 private:
     void spawnGrain (const SampleBuffer& buffer);
     double nextSpawnInterval();

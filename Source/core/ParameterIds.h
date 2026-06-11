@@ -131,7 +131,7 @@ namespace map
 
     inline float grainSizeSeconds (float n)  { return 0.02f + n * n * 0.48f; }   // 20ms .. 500ms
     inline float grainDensityHz (float n)    { return 1.0f + n * n * 59.0f; }    // 1 .. 60 grains/s
-    inline float grainPitchRatio (float n)   { return semitonesToRatio ((n - 0.5f) * 24.0f); } // +/- 1 octave
+    inline float grainPitchRatio (float n)   { return semitonesToRatio ((n - 0.5f) * 12.0f); } // +/- 12 semitones
 
     inline float filterCutoffHz (float n)    { return 40.0f * std::pow (2.0f, n * 8.3f); }        // ~40Hz .. ~12.6kHz
     inline float filterResonance (float n)   { return 0.5f + n * 9.0f; }                          // SVF Q

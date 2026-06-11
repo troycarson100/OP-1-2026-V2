@@ -309,6 +309,10 @@ void Engine::updateScreenModel()
         screen_.macroValues[static_cast<size_t> (m)] = macros_.getMacro (m);
 
     const int selected = screen_.selectedTrack;
+    const auto& matBuf = getTrackMaterialBuffer (selected);
+    tracks_[static_cast<size_t> (selected)].getEngine().getGranular().fillGrainDisplay (
+        matBuf, screen_.grainDisplay.data(), kGrainsPerTrack);
+
     screen_.materialLoopStart01 = params_.effective (selected, ParameterId::LoopStart);
     screen_.materialLoopEnd01   = params_.effective (selected, ParameterId::LoopEnd);
 

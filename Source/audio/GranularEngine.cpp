@@ -1,4 +1,5 @@
 #include <cmath>
+#include <algorithm>
 #include "GranularEngine.h"
 #include "SampleBuffer.h"
 #include "../core/ParameterIds.h"
@@ -40,13 +41,19 @@ void GranularEngine::spawnGrain (const SampleBuffer& buffer)
     const float sizeSeconds = map::grainSizeSeconds (params_.size);
     const int   lengthSamples = static_cast<int> (sizeSeconds * static_cast<float> (sampleRate_));
 
-    // Position with spray randomness, wrapping handled by the buffer read.
+    // Position with spray randomness; wrap into valid buffer range.
     float startFrame = params_.position * (frames - 1.0f)
                      + params_.spray * 0.5f * frames * rng_.nextBipolar();
+    if (frames > 0.0f)
+    {
+        startFrame = std::fmod (startFrame, frames);
+        if (startFrame < 0.0f)
+            startFrame += frames;
+    }
 
-    // Pitch with per-grain texture detune.
+    // Pitch with per-grain texture detune (gentler than before).
     float increment = map::grainPitchRatio (params_.pitch)
-                    * (1.0f + params_.texture * 0.08f * rng_.nextBipolar());
+                    * (1.0f + params_.texture * 0.04f * rng_.nextBipolar());
 
     // Stereo spread via per-grain equal-power pan.
     float gainL = 0.0f, gainR = 0.0f;
@@ -81,6 +88,15 @@ void GranularEngine::process (const SampleBuffer& buffer, float* outL, float* ou
     }
 
     pool_.renderAll (buffer, outL, outR, numSamples);
+}
+
+void GranularEngine::fillGrainDisplay (const SampleBuffer& material, GrainDisplaySlot* out, int maxSlots) const
+{
+    if (out == nullptr || maxSlots <= 0)
+        return;
+
+    const float tf = static_cast<float> (std::max (1, material.getNumFrames()));
+    pool_.fillGrainDisplay (tf, out, maxSlots);
 }
 
 } // namespace sculpt

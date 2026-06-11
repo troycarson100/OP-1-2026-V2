@@ -2,6 +2,7 @@
 
 #include <array>
 #include "GrainVoice.h"
+#include "../core/GrainDisplaySlot.h"
 #include "../util/Constants.h"
 
 namespace sculpt
@@ -22,6 +23,8 @@ public:
     void renderAll (const SampleBuffer& buffer, float* outL, float* outR, int numSamples);
 
     int countActive() const;
+
+    void fillGrainDisplay (float totalFrames, GrainDisplaySlot* out, int maxSlots) const;
 
 private:
     std::array<GrainVoice, kGrainsPerTrack> voices_;
