@@ -14,7 +14,7 @@ namespace sculpt
 //   Cutoff    — smooth shoulder across the band index (even knob feel)
 //   Resonance — constant-Q bandwidth; narrow bands BLOOM louder (analog-style)
 //   Decay     — minimum ring time
-//   Mix       — equal-power dry/bank crossfade (with a little dry bleed)
+//   Mix       — equal-power dry/bank crossfade (dry bleed scales with cutoff)
 // A slow internal traveling wave animates band gains so the spectrum breathes.
 // All processing is real-time safe — no allocation, no locks, no file I/O.
 class SpectralFilterStage

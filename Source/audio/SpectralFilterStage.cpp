@@ -20,7 +20,9 @@ static constexpr float kAnimDepth  = 0.30f;
 static constexpr float kAnimSpread = 0.55f;      // phase offset per band
 
 static constexpr float kWetTrim    = 0.8f;
-static constexpr float kDryBleed   = 0.12f;      // body kept at full wet
+// Max dry into wet path (tape+grain blend); scaled by cutoff^2 so full-dark
+// does not leak raw granular through the resonator.
+static constexpr float kDryBleed   = 0.07f;
 
 static inline float midiToHz (float midi)
 {
@@ -218,15 +220,24 @@ void SpectralFilterStage::process (float* left, float* right, int numSamples)
 
     const float fs = static_cast<float> (sampleRate_);
 
-    // Equal-power crossfade: mix = 1 means 100% resonator bank (plus bleed).
+    // Equal-power crossfade: mix = 1 means 100% resonator bank (bleed is tiny
+    // and only when cutoff opens the spectral window — no raw grain at dark).
     const float dryGain = std::cos (mixVal * kPi * 0.5f);
     const float wetGain = std::sin (mixVal * kPi * 0.5f);
 
-    // Cutoff sweeps a smooth shoulder across the band index so the knob feels
-    // even over its whole travel; Resonance narrows the shoulder.
-    const float cutPos    = 1.0f + cutoffNorm * static_cast<float> (kNumBands + 6);
-    const float fadeBands = 10.0f - 6.0f * resonanceVal;
+    // Cutoff: remap with gamma < 1 so the left half of the knob still opens a
+    // large part of the bank (linear mapping made ~75% feel like near-silence).
+    // Floor keeps low-register resonators present at full CCW.
+    const float fadeBands = clampf (10.0f - 6.0f * resonanceVal, 4.0f, 10.0f);
     const float invFade   = 1.0f / fadeBands;
+
+    const float openness = 0.10f + 0.90f * std::pow (clamp01 (cutoffNorm), 0.40f);
+    const int   nActive  = numActiveBands_ > 0 ? numActiveBands_ : kNumBands;
+    const float cutPos   = 1.8f * fadeBands + openness * static_cast<float> (nActive + 6);
+
+    // Bleed scales with cutoff^2 and wet mix so low cutoff / full Ring stays
+    // resonator-only (granular was already mixed upstream in TrackEngine).
+    const float bleedAmt = kDryBleed * cutoffNorm * cutoffNorm * wetGain * wetGain;
 
     // Advance the spectral animation (slow traveling wave across the bank).
     animPhase_ += kTwoPi * kAnimRateHz * static_cast<float> (numSamples) / fs;
@@ -300,9 +311,8 @@ void SpectralFilterStage::process (float* left, float* right, int numSamples)
             env = level > env ? level : (env * envReleaseC);
         }
 
-        // Dry bleed keeps body at full wet; limiter only touches the bank.
-        const float wetL = softLimit (sumL) + kDryBleed * xL;
-        const float wetR = softLimit (sumR) + kDryBleed * xR;
+        const float wetL = softLimit (sumL) + bleedAmt * xL;
+        const float wetR = softLimit (sumR) + bleedAmt * xR;
 
         left[i]  = dryGain * xL + wetGain * wetL;
         right[i] = dryGain * xR + wetGain * wetR;
