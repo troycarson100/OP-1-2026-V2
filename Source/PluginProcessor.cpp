@@ -199,20 +199,41 @@ void SculptSamplerAudioProcessor::handleMidi (const juce::MidiBuffer& midi)
     }
 }
 
+void SculptSamplerAudioProcessor::applyUserBpm (double bpm)
+{
+    const double clamped = juce::jlimit (32.0, 300.0, bpm);
+    manualBpm_.store (clamped, std::memory_order_relaxed);
+    manualTempoOverride_.store (true, std::memory_order_relaxed);
+}
+
 void SculptSamplerAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
 
-    // Host transport/tempo are passed in as plain values only.
+    // Host transport / tempo: follow play head unless user has dragged BPM (manual override).
+    double     tempoOut = manualBpm_.load (std::memory_order_relaxed);
+    const bool manualOn = manualTempoOverride_.load (std::memory_order_relaxed);
+    bool       havePos  = false;
+    bool       playing  = false;
+
     if (auto* playHead = getPlayHead())
     {
         if (const auto position = playHead->getPosition())
         {
-            if (const auto bpm = position->getBpm())
-                engine_.setHostTempo (*bpm);
-            engine_.setHostPlaying (position->getIsPlaying());
+            havePos = true;
+            playing = position->getIsPlaying();
+
+            if (! manualOn && position->getBpm())
+            {
+                tempoOut = static_cast<double> (*position->getBpm());
+                manualBpm_.store (tempoOut, std::memory_order_relaxed);
+            }
         }
     }
+
+    engine_.setHostTempo (tempoOut);
+    if (havePos)
+        engine_.setHostPlaying (playing);
 
     handleMidi (midiMessages);
     midiMessages.clear();
@@ -318,6 +339,8 @@ void SculptSamplerAudioProcessor::getStateInformation (juce::MemoryBlock& destDa
         }
         const juce::MemoryBlock raw (&copy, sizeof (copy));
         xml->setAttribute ("sculptModBlob", juce::Base64::toBase64 (raw.getData(), raw.getSize()));
+        xml->setAttribute ("manualBpm", manualBpm_.load (std::memory_order_relaxed));
+        xml->setAttribute ("manualTempoOverride", manualTempoOverride_.load (std::memory_order_relaxed) ? 1 : 0);
         copyXmlToBinary (*xml, destData);
     }
 }
@@ -330,6 +353,10 @@ void SculptSamplerAudioProcessor::setStateInformation (const void* data, int siz
 
         if (xml->hasTagName (apvts_.state.getType()))
             apvts_.replaceState (juce::ValueTree::fromXml (*xml));
+
+        manualBpm_.store (xml->getDoubleAttribute ("manualBpm", 120.0), std::memory_order_relaxed);
+        manualTempoOverride_.store (xml->getIntAttribute ("manualTempoOverride", 0) != 0,
+                                    std::memory_order_relaxed);
 
         juce::MemoryOutputStream mos;
         if (b64.isNotEmpty() && juce::Base64::convertFromBase64 (mos, b64))

@@ -368,6 +368,57 @@ void InstrumentPanel::clearWaveformEnvelope()
     waveformPeaks_.fill (0.0f);
 }
 
+juce::Rectangle<int> InstrumentPanel::bpmInteractionBounds() const
+{
+    auto area = getLocalBounds().reduced (12);
+    auto headerStrip = area.removeFromTop (18);
+    constexpr int bpmW = 88;
+    headerStrip.removeFromLeft (juce::jmax (0, headerStrip.getWidth() - bpmW));
+    return headerStrip;
+}
+
+void InstrumentPanel::mouseDown (const juce::MouseEvent& e)
+{
+    if (! bpmDragHandler_ || ! screenProvider_)
+        return;
+
+    if (bpmInteractionBounds().contains (e.getPosition()))
+    {
+        bpmDragging_     = true;
+        bpmDragStartX_   = static_cast<float> (e.position.x);
+        bpmAtDragStart_  = static_cast<double> (screenProvider_().displayBpm);
+    }
+}
+
+void InstrumentPanel::mouseDrag (const juce::MouseEvent& e)
+{
+    if (! bpmDragging_ || ! bpmDragHandler_)
+        return;
+
+    const float dx = static_cast<float> (e.position.x) - bpmDragStartX_;
+    const double sensitivity = e.mods.isShiftDown() ? 0.08 : 0.35;
+    bpmDragHandler_ (bpmAtDragStart_ + static_cast<double> (dx) * sensitivity);
+}
+
+void InstrumentPanel::mouseUp (const juce::MouseEvent&)
+{
+    bpmDragging_ = false;
+}
+
+void InstrumentPanel::mouseMove (const juce::MouseEvent& e)
+{
+    if (bpmInteractionBounds().contains (e.getPosition()))
+        setMouseCursor (juce::MouseCursor::LeftRightResizeCursor);
+    else
+        setMouseCursor (juce::MouseCursor::ParentCursor);
+}
+
+void InstrumentPanel::mouseExit (const juce::MouseEvent&)
+{
+    if (! bpmDragging_)
+        setMouseCursor (juce::MouseCursor::ParentCursor);
+}
+
 void InstrumentPanel::paint (juce::Graphics& g)
 {
     using namespace sculpt_editor;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <atomic>
+
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
 
@@ -103,6 +105,10 @@ public:
     sculpt::ModPatch getModPatch() const;
     void               setModPatch (const sculpt::ModPatch& patch);
 
+    // LCD / UI: horizontal BPM drag on the instrument header sets this until cleared by preset
+    // reload; saved in plugin state. When false, host tempo (if any) updates manualBpm each block.
+    void applyUserBpm (double bpm);
+
     // Decodes WAV/AIFF/etc. into the selected track's material buffer (not RT).
     bool loadAudioFileIntoTrack (int trackIndex, const juce::File& file);
 
@@ -126,6 +132,9 @@ private:
 
     mutable juce::CriticalSection modPatchLock_;
     sculpt::ModPatch              modPatch_;
+
+    std::atomic<double> manualBpm_ { 120.0 };
+    std::atomic<bool>    manualTempoOverride_ { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SculptSamplerAudioProcessor)
 };

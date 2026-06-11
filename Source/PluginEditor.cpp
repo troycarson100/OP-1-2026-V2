@@ -140,6 +140,7 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     instrumentPanel_.setScreenProvider ([this]() -> const sculpt::ScreenModel& {
         return processor_.getEngine().getScreenModel();
     });
+    instrumentPanel_.setBpmDragHandler ([this] (double bpm) { processor_.applyUserBpm (bpm); });
     addAndMakeVisible (instrumentPanel_);
 
     modPagePanel_ = std::make_unique<ModPagePanel> (processor_);
