@@ -9,6 +9,20 @@
 namespace sculpt
 {
 
+// Mod page LCD: one-cycle preview + depth layer + scanner (audio thread writes).
+struct ModLcdSnapshot
+{
+    static constexpr int kBins = kMaterialWaveformBins;
+
+    std::array<float, kBins> carrier01 {};   // full-scale shape outline 0..1
+    std::array<float, kBins> effective01 {}; // shape * amount (modulation layer)
+    float scannerPhase01 = 0.0f;             // vertical playhead 0..1 through cycle
+    float valueBipolar   = 0.0f;             // current source output (with offset)
+    float amount01       = 1.0f;             // wave amount or unity for other kinds
+    uint8_t kind         = 0;                 // ModulatorKind as uint8
+    bool    active        = false;
+};
+
 // Abstract display state for the future hardware screen.
 // The engine writes it once per block; any frontend (JUCE debug editor now,
 // an embedded display later) only reads it. No drawing code lives here.
@@ -54,6 +68,9 @@ struct ScreenModel
 
     // Granular page: per-grain overlay on the material waveform (pool size).
     std::array<GrainDisplaySlot, kGrainsPerTrack> grainDisplay {};
+
+    // Mod page: oscilloscope-style source preview (see ModLcdSnapshot).
+    ModLcdSnapshot modLcd {};
 };
 
 } // namespace sculpt

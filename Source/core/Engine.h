@@ -70,6 +70,9 @@ public:
     const ModPatch& getModPatch() const;
     void        triggerModAdsr (int trackIndex, int slotIndex);
 
+    // Which mod slot the Mod page LCD follows (0..kModSlotsPerTrack-1). UI thread may set.
+    void setModLcdSlot (int slotIndex);
+
     const ScreenModel& getScreenModel() const { return screen_; }
     SceneManager&      getSceneManager()      { return sceneManager_; }
 
@@ -116,6 +119,8 @@ private:
 
     double sampleRate_ = kDefaultSampleRate;
     bool   prepared_   = false;
+
+    std::atomic<int> modLcdSlot_ { 0 };
 };
 
 } // namespace sculpt

@@ -170,6 +170,13 @@ void Engine::triggerModAdsr (int trackIndex, int slotIndex)
     modEngine_.triggerAdsr (trackIndex, slotIndex);
 }
 
+void Engine::setModLcdSlot (int slotIndex)
+{
+    const int s = (slotIndex < 0) ? 0
+                                  : (slotIndex >= kModSlotsPerTrack ? kModSlotsPerTrack - 1 : slotIndex);
+    modLcdSlot_.store (s, std::memory_order_relaxed);
+}
+
 // ---- Audio -------------------------------------------------------------------
 
 void Engine::process (float** inputs, float** outputs,
@@ -347,6 +354,16 @@ void Engine::updateScreenModel()
     {
         screen_.filterBandGains.fill (0.0f);
     }
+
+    if (selectedPage_ == Page::Mod)
+    {
+        const int    trk    = getSelectedTrack();
+        const int    slot   = modLcdSlot_.load (std::memory_order_relaxed);
+        const double beatEnd = clock_.getBeatPosition();
+        modEngine_.writeModLcdSnapshot (trk, slot, inputEnvelope_.getValue(), beatEnd, screen_.modLcd);
+    }
+    else
+        screen_.modLcd.active = false;
 }
 
 const SampleBuffer& Engine::getTrackMaterialBuffer (int trackIndex) const

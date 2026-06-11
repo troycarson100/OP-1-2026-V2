@@ -37,6 +37,7 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
     slotCombo_.setSelectedId (1, juce::dontSendNotification);
     slotCombo_.onChange = [this]
     {
+        processor_.getEngine().setModLcdSlot (slotCombo_.getSelectedItemIndex());
         if (! suppressCallbacks_)
         {
             refreshFromEngine();
@@ -370,6 +371,7 @@ void ModPagePanel::refreshFromEngine()
     kindChanged();
     syncWaveControlsEnabled();
     syncRandomControlsEnabled();
+    processor_.getEngine().setModLcdSlot (slot);
     suppressCallbacks_ = false;
 }
 

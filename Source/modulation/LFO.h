@@ -31,6 +31,9 @@ public:
     void setShape (Shape s)     { shape_ = (s < Shape::Count ? s : Shape::Sine); }
     void setPhase (float phase01);
 
+    // Wrapped 0..1 phase for display (free mode); sync mode ignores and uses beat phase.
+    float getWrappedPhase01() const;
+
 private:
     double sampleRate_ = 44100.0;
     double phase_      = 0.0;     // 0..1

@@ -18,4 +18,10 @@ namespace sculpt_editor
     inline const juce::Colour kWaveformStroke { 0xff9ee8e8 };
     inline const juce::Colour kWaveformLoopShade { 0x4020a0a0 };
     inline const juce::Colour kWaveformPlayhead { 0xffffffff };
+    inline const juce::Colour kModLcdCarrierFill { 0xff4a6a72 };
+    inline const juce::Colour kModLcdCarrierStroke { 0xff6a8a92 };
+    inline const juce::Colour kModLcdModFill { 0x55e8734a };
+    inline const juce::Colour kModLcdModStroke { 0xffe8734a };
+    inline const juce::Colour kModLcdScanner { 0xffffffff };
+    inline const juce::Colour kModLcdDot { 0xffffcc66 };
 }

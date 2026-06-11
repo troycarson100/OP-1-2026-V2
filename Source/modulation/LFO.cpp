@@ -49,6 +49,14 @@ void LFO::setPhase (float phase01)
     phase_ = static_cast<double> (clamp01 (phase01));
 }
 
+float LFO::getWrappedPhase01() const
+{
+    double p = phase_ - std::floor (phase_);
+    if (p < 0.0)
+        p += 1.0;
+    return static_cast<float> (p);
+}
+
 void LFO::update (int numSamples)
 {
     phase_ += static_cast<double> (rateHz_) * static_cast<double> (numSamples) / sampleRate_;

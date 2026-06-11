@@ -276,6 +276,76 @@ namespace
             g.fillRoundedRectangle (bar, 1.0f);
         }
     }
+
+    void drawSymmetricPeaksStyled (juce::Graphics& g, juce::Rectangle<float> rect,
+                                   const std::array<float, sculpt::kMaterialWaveformBins>& peaks,
+                                   juce::Colour fill, juce::Colour stroke, float strokeW)
+    {
+        constexpr int n = sculpt::kMaterialWaveformBins;
+        const float   midY = rect.getCentreY();
+        const float   halfH = rect.getHeight() * 0.42f;
+
+        juce::Path path;
+        for (int i = 0; i < n; ++i)
+        {
+            const float x = rect.getX() + (static_cast<float> (i) + 0.5f) * rect.getWidth() / static_cast<float> (n);
+            const float pk = juce::jlimit (0.0f, 1.0f, peaks[static_cast<size_t> (i)]);
+            const float yTop = midY - pk * halfH;
+            if (i == 0)
+                path.startNewSubPath (x, yTop);
+            else
+                path.lineTo (x, yTop);
+        }
+        for (int i = n - 1; i >= 0; --i)
+        {
+            const float x = rect.getX() + (static_cast<float> (i) + 0.5f) * rect.getWidth() / static_cast<float> (n);
+            const float pk = juce::jlimit (0.0f, 1.0f, peaks[static_cast<size_t> (i)]);
+            const float yBot = midY + pk * halfH;
+            path.lineTo (x, yBot);
+        }
+        path.closeSubPath();
+
+        g.setColour (fill);
+        g.fillPath (path);
+        g.setColour (stroke);
+        g.strokePath (path, juce::PathStrokeType (strokeW));
+    }
+
+    void drawModOscilloscope (juce::Graphics& g, juce::Rectangle<float> wfArea,
+                              const sculpt::ModLcdSnapshot& m)
+    {
+        if (! m.active)
+        {
+            g.setColour (kText.withAlpha (0.42f));
+            g.setFont (juce::FontOptions (12.0f));
+            g.drawText ("Select a mod source (Wave, Random, ADSR, Input env).",
+                        wfArea.reduced (6.0f, 2.0f), juce::Justification::centredLeft, true);
+            return;
+        }
+
+        g.setColour (kLcdWaveformBg);
+        g.fillRoundedRectangle (wfArea, 3.0f);
+
+        drawSymmetricPeaksStyled (g, wfArea, m.carrier01,
+                                  kModLcdCarrierFill.withAlpha (0.24f),
+                                  kModLcdCarrierStroke.withAlpha (0.5f), 1.0f);
+        drawSymmetricPeaksStyled (g, wfArea, m.effective01,
+                                  kModLcdModFill,
+                                  kModLcdModStroke.withAlpha (0.95f), 1.35f);
+
+        const float scanX = wfArea.getX() + juce::jlimit (0.0f, 1.0f, m.scannerPhase01) * wfArea.getWidth();
+        g.setColour (kModLcdScanner.withAlpha (0.88f));
+        g.drawVerticalLine (juce::roundToInt (scanX), wfArea.getY(), wfArea.getBottom());
+
+        const float midY = wfArea.getCentreY();
+        const float halfH = wfArea.getHeight() * 0.42f;
+        const float vy = juce::jlimit (wfArea.getY() + 3.0f, wfArea.getBottom() - 3.0f,
+                                       midY - juce::jlimit (-1.0f, 1.0f, m.valueBipolar) * halfH);
+        g.setColour (kModLcdDot.withAlpha (0.95f));
+        g.fillEllipse (scanX - 4.5f, vy - 4.5f, 9.0f, 9.0f);
+        g.setColour (kModLcdDot.brighter (0.2f));
+        g.drawEllipse (scanX - 4.5f, vy - 4.5f, 9.0f, 9.0f, 1.1f);
+    }
 } // namespace
 
 void InstrumentPanel::setWaveformEnvelope (const float* data, int numBins)
@@ -377,12 +447,23 @@ void InstrumentPanel::paint (juce::Graphics& g)
     }
     else if (modPage)
     {
-        g.setColour (kText.withAlpha (0.85f));
-        g.setFont (juce::FontOptions (13.0f));
-        g.drawText ("MOD: 4 slots / page + source + map (see panel below).",
-                    area.removeFromTop (40).toFloat(), juce::Justification::centredLeft, true);
-        const int meterBlockH = juce::jmin (100, juce::jmax (64, area.getHeight()));
-        drawAllTrackMeters (g, area.removeFromTop (meterBlockH), screen);
+        const int stripH = 0;
+        const int rowH   = 28;
+        const int topBudget = area.getHeight();
+        const int fixedBelow = rowH + rowH + 4;
+        const int wfMax      = juce::jmax (0, topBudget - fixedBelow);
+        const int wfH        = juce::jlimit (0, wfMax,
+                                  juce::roundToInt (static_cast<float> (topBudget) * kWaveformFraction));
+
+        auto wfArea = area.removeFromTop (wfH).toFloat().reduced (1.0f, 2.0f);
+        drawModOscilloscope (g, wfArea, screen.modLcd);
+
+        if (stripH > 0)
+            area.removeFromTop (stripH);
+        area.removeFromTop (4);
+        const int st = juce::jlimit (0, sculpt::kNumTracks - 1, screen.selectedTrack);
+        drawOneTrackMeter (g, area.removeFromTop (rowH), screen, st);
+        drawMasterMeter (g, area.removeFromTop (rowH), screen);
     }
     else if (filterPage)
     {
