@@ -3,6 +3,7 @@
 #include "GranularEngine.h"
 #include "SampleBuffer.h"
 #include "../core/ParameterIds.h"
+#include "../util/Constants.h"
 #include "../util/MathUtils.h"
 
 namespace sculpt
@@ -59,9 +60,17 @@ void GranularEngine::spawnGrain (const SampleBuffer& buffer)
     float gainL = 0.0f, gainR = 0.0f;
     equalPowerPan (params_.spread * rng_.nextBipolar(), gainL, gainR);
 
-    // Compensate level for expected grain overlap so density doesn't clip.
-    const float overlap = map::grainDensityHz (params_.density) * sizeSeconds;
-    const float amp = 0.85f / std::sqrt (overlap > 1.0f ? overlap : 1.0f);
+    // Level vs overlap: many grains overlapping raises peak/RMS. We still want
+    // turning density or size up to feel fuller (more grains / longer bodies),
+    // so do not assume the full "ideal" overlap when the fixed pool caps how
+    // many grains can actually sound at once.
+    const float overlapIdeal = map::grainDensityHz (params_.density) * sizeSeconds;
+    const float overlapForGain = std::min (overlapIdeal, static_cast<float> (kGrainsPerTrack));
+    // Gentler than 1/sqrt(overlap): strict sqrt made dense clouds feel too quiet.
+    constexpr float kOverlapCompExponent = 0.36f;
+    constexpr float kGrainLaunchGain     = 1.0f;
+    const float denom = std::pow (std::max (1.0f, overlapForGain), kOverlapCompExponent);
+    const float amp   = kGrainLaunchGain / denom;
 
     GrainVoice::StartParams sp;
     sp.startFrame    = startFrame;

@@ -19,6 +19,9 @@ public:
     void setSlew (float amount01){ slew_ = amount01; }
     void setSeed (uint32_t seed) { rng_.seed (seed); }
 
+    // Beat-synced sample-hold: new target when floor(beat*cyclesPerBeat) crosses.
+    void updateSync (double beatStart, double beatEnd, double cyclesPerBeat, float slew01);
+
 private:
     double  sampleRate_      = 44100.0;
     double  samplesUntilNext_ = 0.0;

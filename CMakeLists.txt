@@ -41,6 +41,7 @@ target_sources(SculptSampler PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/ui/juce/InstrumentPanel.cpp
+    Source/ui/juce/ModPagePanel.cpp
 
     # Portable engine - core
     Source/core/Engine.cpp
@@ -73,7 +74,8 @@ target_sources(SculptSampler PRIVATE
     Source/modulation/LFO.cpp
     Source/modulation/EnvelopeFollower.cpp
     Source/modulation/RandomModulator.cpp
-    Source/modulation/ModMatrix.cpp
+    Source/modulation/ModEngine.cpp
+    Source/modulation/AdsrModulator.cpp
     Source/modulation/MacroControls.cpp
 
     # Hardware abstraction

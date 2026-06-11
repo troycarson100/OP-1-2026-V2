@@ -10,11 +10,9 @@
 #include "../audio/Track.h"
 #include "../audio/SampleBuffer.h"
 #include "../audio/Mixer.h"
-#include "../modulation/LFO.h"
-#include "../modulation/RandomModulator.h"
 #include "../modulation/EnvelopeFollower.h"
 #include "../modulation/MacroControls.h"
-#include "../modulation/ModMatrix.h"
+#include "../modulation/ModEngine.h"
 #include "../ui/ScreenModel.h"
 #include "../util/Constants.h"
 
@@ -68,6 +66,10 @@ public:
     Page getSelectedPage() const          { return selectedPage_; }
     int  getSelectedTrack() const;
 
+    void        setModPatch (const ModPatch& patch);
+    const ModPatch& getModPatch() const;
+    void        triggerModAdsr (int trackIndex, int slotIndex);
+
     const ScreenModel& getScreenModel() const { return screen_; }
     SceneManager&      getSceneManager()      { return sceneManager_; }
 
@@ -79,7 +81,8 @@ public:
 
 private:
     void applyPendingRequests();
-    void updateModulation (float** inputs, int numInputChannels, int offset, int numSamples);
+    void updateModulation (float** inputs, int numInputChannels, int offset, int numSamples,
+                           double beatAtBlockStart);
     void processChunk (float** inputs, float** outputs,
                        int numInputChannels, int numOutputChannels,
                        int offset, int numSamples);
@@ -93,11 +96,9 @@ private:
     std::array<Track, kNumTracks> tracks_;
     Mixer mixer_;
 
-    std::array<LFO, kNumTracks>             lfos_;
-    std::array<RandomModulator, kNumTracks> randoms_;
     EnvelopeFollower inputEnvelope_;
     MacroControls    macros_;
-    ModMatrix        modMatrix_;
+    ModEngine        modEngine_;
 
     ScreenModel screen_;
     Page        selectedPage_ = Page::Granular;

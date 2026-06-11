@@ -18,7 +18,7 @@ Source/
                         GrainPool, FilterStage, ColorStage, SpaceStage, Mixer,
                         Envelope, OnePole
   modulation/           Portable: LFO, EnvelopeFollower, RandomModulator,
-                        MacroControls, ModMatrix
+                        MacroControls, ModEngine (S-4-style per-track mod slots)
   hardware/             Portable: HardwareAbstraction interface + DummyHardware
   ui/                   Portable: ScreenModel + PageModel (abstract display state,
                         no drawing)

@@ -1,9 +1,12 @@
 #pragma once
 
+#include <memory>
+
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
 #include "ui/PageModel.h"
 #include "ui/juce/InstrumentPanel.h"
+#include "ui/juce/ModPagePanel.h"
 
 // Temporary debug UI only. Reads the portable ScreenModel for display and
 // attaches sliders to host parameters. No DSP, no engine logic, no core state.
@@ -66,7 +69,9 @@ private:
     std::array<juce::Slider, sculpt::kNumMacros> macroSliders_;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, sculpt::kNumMacros> macroAttachments_;
 
-    juce::TextButton modButton_ { "MOD" };
+    std::unique_ptr<ModPagePanel> modPagePanel_;
+    juce::Viewport                  modPageViewport_;
+
     juce::TextButton loadSampleButton_ { "LOAD" };
     juce::Label      helpLabel_;
 

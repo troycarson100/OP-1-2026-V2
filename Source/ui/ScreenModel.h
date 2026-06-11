@@ -30,6 +30,10 @@ struct ScreenModel
     float masterMeterL = 0.0f;
     float masterMeterR = 0.0f;
 
+    // Global tempo from portable Clock (host BPM when available). LCD top-right.
+    float  displayBpm = 120.0f;
+    bool   bpmValid   = true;
+
     // Selected track tape loop region (normalized, same as tape uses) for Material LCD.
     float materialLoopStart01 = 0.0f;
     float materialLoopEnd01   = 1.0f;

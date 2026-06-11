@@ -4,10 +4,7 @@
 namespace sculpt
 {
 
-Engine::Engine()
-{
-    modMatrix_.setDefaultRouting();
-}
+Engine::Engine() = default;
 
 void Engine::prepare (double sampleRate, int blockSize)
 {
@@ -23,15 +20,9 @@ void Engine::prepare (double sampleRate, int blockSize)
     {
         const auto ts = static_cast<size_t> (t);
         tracks_[ts].prepare (sampleRate_, t);
-
-        lfos_[ts].prepare (sampleRate_);
-        lfos_[ts].setRateHz (0.21f + 0.13f * static_cast<float> (t));
-        lfos_[ts].setPhase (0.25f * static_cast<float> (t));
-
-        randoms_[ts].prepare (sampleRate_);
-        randoms_[ts].setRateHz (1.5f + 0.7f * static_cast<float> (t));
-        randoms_[ts].setSeed (0x1234u + static_cast<uint32_t> (t) * 0x9E37u);
     }
+
+    modEngine_.prepare (sampleRate_);
 
     macros_.reset();
     prepared_ = true;
@@ -47,6 +38,7 @@ void Engine::reset()
     for (auto& track : tracks_)
         track.reset();
     inputEnvelope_.reset();
+    modEngine_.reset();
     trackPeaks_.fill (0.0f);
     masterPeakL_ = masterPeakR_ = 0.0f;
 }
@@ -163,6 +155,21 @@ void Engine::setHostTempo (double bpm)       { clock_.setBpm (bpm); }
 void Engine::setHostPlaying (bool playing)   { transport_.setPlaying (playing); }
 void Engine::setSelectedPage (Page page)     { selectedPage_ = page; }
 
+void Engine::setModPatch (const ModPatch& patch)
+{
+    modEngine_.setLivePatch (patch);
+}
+
+const ModPatch& Engine::getModPatch() const
+{
+    return modEngine_.getLivePatch();
+}
+
+void Engine::triggerModAdsr (int trackIndex, int slotIndex)
+{
+    modEngine_.triggerAdsr (trackIndex, slotIndex);
+}
+
 // ---- Audio -------------------------------------------------------------------
 
 void Engine::process (float** inputs, float** outputs,
@@ -184,7 +191,8 @@ void Engine::process (float** inputs, float** outputs,
     updateScreenModel();
 }
 
-void Engine::updateModulation (float** inputs, int numInputChannels, int offset, int numSamples)
+void Engine::updateModulation (float** inputs, int numInputChannels, int offset, int numSamples,
+                               double beatAtBlockStart)
 {
     if (inputs != nullptr && numInputChannels > 0)
     {
@@ -200,28 +208,18 @@ void Engine::updateModulation (float** inputs, int numInputChannels, int offset,
     macros_.setMacro (2, params_.getGlobal (ParameterId::Macro3));
     macros_.setMacro (3, params_.getGlobal (ParameterId::Macro4));
 
-    ModSourceValues sources;
-    for (int t = 0; t < kNumTracks; ++t)
-    {
-        const auto ts = static_cast<size_t> (t);
-        lfos_[ts].update (numSamples);
-        randoms_[ts].update (numSamples);
-        sources.lfo[ts]    = lfos_[ts].getValue();
-        sources.random[ts] = randoms_[ts].getValue();
-    }
-    sources.inputEnvelope = inputEnvelope_.getValue();
-    for (int m = 0; m < kNumMacros; ++m)
-        sources.macros[static_cast<size_t> (m)] = macros_.getMacro (m);
-
-    modMatrix_.apply (sources, params_);
+    params_.clearModOffsets();
+    modEngine_.apply (params_, inputEnvelope_.getValue(), numSamples,
+                      beatAtBlockStart, clock_.getBpm(), sampleRate_);
 }
 
 void Engine::processChunk (float** inputs, float** outputs,
                            int numInputChannels, int numOutputChannels,
                            int offset, int numSamples)
 {
+    const double beatAtBlockStart = clock_.getBeatPosition();
+    updateModulation (inputs, numInputChannels, offset, numSamples, beatAtBlockStart);
     clock_.advance (numSamples);
-    updateModulation (inputs, numInputChannels, offset, numSamples);
 
     // Capture live input into any armed track.
     if (inputs != nullptr && numInputChannels > 0)
@@ -304,6 +302,10 @@ void Engine::updateScreenModel()
 
     screen_.masterMeterL = clamp01 (masterPeakL_);
     screen_.masterMeterR = clamp01 (masterPeakR_);
+
+    const double bpm = clock_.getBpm();
+    screen_.displayBpm = static_cast<float> (bpm);
+    screen_.bpmValid   = (bpm > 1.0 && bpm < 999.0);
 
     for (int m = 0; m < kNumMacros; ++m)
         screen_.macroValues[static_cast<size_t> (m)] = macros_.getMacro (m);

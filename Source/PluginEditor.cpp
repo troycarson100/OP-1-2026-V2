@@ -79,6 +79,8 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
         const auto page = static_cast<sculpt::Page> (pg);
         if (page == sculpt::Page::Mixer)
             b.setButtonText ("MIX");
+        else if (page == sculpt::Page::Mod)
+            b.setButtonText ("MOD");
         else
             b.setButtonText (juce::String (sculpt::PageModel::pageName (page)).toUpperCase());
         b.setColour (juce::TextButton::buttonOnColourId, kAccent);
@@ -99,10 +101,6 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
         macroAttachments_[ms] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
             apvts, "macro" + juce::String (m + 1), slider);
     }
-
-    modButton_.setEnabled (false);
-    modButton_.setTooltip ("Modulation mapping on the encoders (coming later).");
-    addAndMakeVisible (modButton_);
 
     addAndMakeVisible (loadSampleButton_);
     loadSampleButton_.onClick = [this]
@@ -144,6 +142,13 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     });
     addAndMakeVisible (instrumentPanel_);
 
+    modPagePanel_ = std::make_unique<ModPagePanel> (processor_);
+    modPageViewport_.setScrollBarsShown (true, false);
+    modPageViewport_.setScrollBarThickness (10);
+    modPageViewport_.setViewedComponent (modPagePanel_.get(), false);
+    addAndMakeVisible (modPageViewport_);
+    modPageViewport_.setVisible (false);
+
     rebuildPageControls();
     startTimerHz (30);
     setSize (980, 840);
@@ -183,6 +188,12 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
     auto& apvts = processor_.getValueTreeState();
     const int track = getSelectedTrackFromParameter();
     lastBuiltTrack_ = track;
+
+    if (currentPage_ == sculpt::Page::Mod)
+    {
+        modPagePanel_->refreshFromEngine();
+        return;
+    }
 
     for (int slot = 0; slot < sculpt::kMaxParamsPerPage; ++slot)
     {
@@ -295,7 +306,6 @@ void SculptSamplerAudioProcessorEditor::resized()
         playButtons_[static_cast<size_t> (t)].setBounds (cell.reduced (6, 2));
     }
 
-    modButton_.setBounds (actionRow.removeFromLeft (56).reduced (0, 6));
     loadSampleButton_.setBounds (actionRow.removeFromLeft (88).reduced (0, 6));
     helpLabel_.setBounds (actionRow.reduced (8, 6));
 
@@ -317,6 +327,17 @@ void SculptSamplerAudioProcessorEditor::resized()
 
     lcdKnobStack.removeFromTop (6);
     auto knobArea = lcdKnobStack;
+
+    if (currentPage_ == sculpt::Page::Mod && modPagePanel_ != nullptr)
+    {
+        modPageViewport_.setVisible (true);
+        modPageViewport_.setBounds (knobArea);
+        const int contentW = juce::jmax (200, knobArea.getWidth() - 12);
+        modPagePanel_->setSize (contentW, ModPagePanel::recommendedScrollableHeight());
+        return;
+    }
+
+    modPageViewport_.setVisible (false);
 
     const int columns = 4;
     const int cellWidth = knobArea.getWidth() / columns;

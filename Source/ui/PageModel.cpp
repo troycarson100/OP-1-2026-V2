@@ -32,6 +32,8 @@ namespace
         // Mixer
         { ParameterId::TrackLevel, ParameterId::TrackPan, ParameterId::OutputGain,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
+        // Mod (encoder mapping lives on Mod page UI; no APVTS row here)
+        { kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
     };
 }
 
@@ -45,6 +47,7 @@ const char* PageModel::pageName (Page page)
         case Page::Color:    return "Color";
         case Page::Space:    return "Space";
         case Page::Mixer:    return "Mixer";
+        case Page::Mod:     return "Mod";
         default:             return "?";
     }
 }

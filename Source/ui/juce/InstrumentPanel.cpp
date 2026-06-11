@@ -320,14 +320,22 @@ void InstrumentPanel::paint (juce::Graphics& g)
     g.setColour (kText);
     g.setFont (juce::FontOptions (12.0f));
 
+    auto headerStrip = area.removeFromTop (18);
+    const int bpmW = 88;
+    auto leftHdr = headerStrip.removeFromLeft (juce::jmax (0, headerStrip.getWidth() - bpmW));
     const juce::String header = "TRK " + juce::String (screen.selectedTrack + 1)
                                + "   SCENE " + juce::String::charToString (juce::juce_wchar ('A' + screen.currentScene))
                                + "   " + juce::String (sculpt::PageModel::pageName (screen.selectedPage)).toUpperCase();
-    g.drawText (header, area.removeFromTop (18), juce::Justification::centredLeft);
+    g.drawText (header, leftHdr, juce::Justification::centredLeft);
+    g.setColour (screen.bpmValid ? kAccent : kText.withAlpha (0.55f));
+    const juce::String bpmTxt = juce::String (screen.displayBpm, 1) + " BPM";
+    g.drawText (bpmTxt, headerStrip, juce::Justification::centredRight);
+    g.setColour (kText);
 
     const bool materialPage = (screen.selectedPage == sculpt::Page::Material);
     const bool granularPage = (screen.selectedPage == sculpt::Page::Granular);
     const bool filterPage   = (screen.selectedPage == sculpt::Page::Filter);
+    const bool modPage      = (screen.selectedPage == sculpt::Page::Mod);
     const bool waveformPage = materialPage || granularPage;
 
     // Reserve the fixed value grid strip at the bottom on every page.
@@ -366,6 +374,15 @@ void InstrumentPanel::paint (juce::Graphics& g)
         area.removeFromTop (4);
         drawOneTrackMeter (g, area.removeFromTop (rowH), screen, st);
         drawMasterMeter (g, area.removeFromTop (rowH), screen);
+    }
+    else if (modPage)
+    {
+        g.setColour (kText.withAlpha (0.85f));
+        g.setFont (juce::FontOptions (13.0f));
+        g.drawText ("MOD: 4 slots / page + source + map (see panel below).",
+                    area.removeFromTop (40).toFloat(), juce::Justification::centredLeft, true);
+        const int meterBlockH = juce::jmin (100, juce::jmax (64, area.getHeight()));
+        drawAllTrackMeters (g, area.removeFromTop (meterBlockH), screen);
     }
     else if (filterPage)
     {

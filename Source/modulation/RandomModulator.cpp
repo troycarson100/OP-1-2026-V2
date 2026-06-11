@@ -34,4 +34,17 @@ void RandomModulator::update (int numSamples)
     value_ = lerp (value_, target_, blend);
 }
 
+void RandomModulator::updateSync (double beatStart, double beatEnd, double cyclesPerBeat, float slew01)
+{
+    const double b0 = beatStart * cyclesPerBeat;
+    const double b1 = beatEnd * cyclesPerBeat;
+    const auto   i0 = static_cast<long long> (std::floor (b0));
+    const auto   i1 = static_cast<long long> (std::floor (b1));
+    if (i1 != i0)
+        target_ = rng_.nextBipolar();
+
+    const float blend = lerp (0.9f, 0.05f, clamp01 (slew01));
+    value_ = lerp (value_, target_, blend);
+}
+
 } // namespace sculpt

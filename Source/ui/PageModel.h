@@ -15,6 +15,7 @@ enum class Page : int
     Color,
     Space,
     Mixer,
+    Mod,
     Count
 };
 

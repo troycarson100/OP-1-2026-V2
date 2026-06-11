@@ -3,6 +3,7 @@
 #include "util/Constants.h"
 #include "core/FilterScales.h"
 
+#include <cstring>
 #include <vector>
 
 namespace
@@ -137,6 +138,10 @@ void SculptSamplerAudioProcessor::prepareToPlay (double sampleRate, int samplesP
 {
     engine_.prepare (sampleRate, samplesPerBlock);
     syncParametersToEngine();
+    {
+        const juce::ScopedLock sl (modPatchLock_);
+        engine_.setModPatch (modPatch_);
+    }
 }
 
 void SculptSamplerAudioProcessor::releaseResources()
@@ -214,6 +219,11 @@ void SculptSamplerAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer
 
     syncParametersToEngine();
 
+    {
+        const juce::ScopedLock sl (modPatchLock_);
+        engine_.setModPatch (modPatch_);
+    }
+
     // In-place: the engine reads inputs (capture/env-follow) before it
     // overwrites the same buffers with the mixed output.
     float* const* channels = buffer.getArrayOfWritePointers();
@@ -285,17 +295,52 @@ juce::AudioProcessorEditor* SculptSamplerAudioProcessor::createEditor()
     return new SculptSamplerAudioProcessorEditor (*this);
 }
 
+sculpt::ModPatch SculptSamplerAudioProcessor::getModPatch() const
+{
+    const juce::ScopedLock sl (modPatchLock_);
+    return modPatch_;
+}
+
+void SculptSamplerAudioProcessor::setModPatch (const sculpt::ModPatch& patch)
+{
+    const juce::ScopedLock sl (modPatchLock_);
+    modPatch_ = patch;
+}
+
 void SculptSamplerAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     if (auto xml = apvts_.copyState().createXml())
+    {
+        sculpt::ModPatch copy {};
+        {
+            const juce::ScopedLock sl (modPatchLock_);
+            copy = modPatch_;
+        }
+        const juce::MemoryBlock raw (&copy, sizeof (copy));
+        xml->setAttribute ("sculptModBlob", juce::Base64::toBase64 (raw.getData(), raw.getSize()));
         copyXmlToBinary (*xml, destData);
+    }
 }
 
 void SculptSamplerAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
     if (auto xml = getXmlFromBinary (data, sizeInBytes))
+    {
+        const juce::String b64 = xml->getStringAttribute ("sculptModBlob");
+
         if (xml->hasTagName (apvts_.state.getType()))
             apvts_.replaceState (juce::ValueTree::fromXml (*xml));
+
+        juce::MemoryOutputStream mos;
+        if (b64.isNotEmpty() && juce::Base64::convertFromBase64 (mos, b64))
+        {
+            if (mos.getDataSize() == sizeof (modPatch_))
+            {
+                const juce::ScopedLock sl (modPatchLock_);
+                std::memcpy (&modPatch_, mos.getData(), sizeof (modPatch_));
+            }
+        }
+    }
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

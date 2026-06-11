@@ -20,6 +20,8 @@ void ParameterState::resetToDefaults()
             track_[static_cast<size_t> (t)][static_cast<size_t> (i)]     = parameterDefault (id);
             modOffset_[static_cast<size_t> (t)][static_cast<size_t> (i)] = 0.0f;
         }
+
+        globalModOffset_[static_cast<size_t> (i)] = 0.0f;
     }
 }
 
@@ -51,6 +53,12 @@ void ParameterState::clearModOffsets()
 {
     for (auto& trackOffsets : modOffset_)
         trackOffsets.fill (0.0f);
+    globalModOffset_.fill (0.0f);
+}
+
+void ParameterState::addModOffsetGlobal (ParameterId id, float offset)
+{
+    globalModOffset_[static_cast<size_t> (id)] += offset;
 }
 
 void ParameterState::addModOffset (int track, ParameterId id, float offset)
@@ -71,7 +79,8 @@ float ParameterState::effective (int track, ParameterId id) const
 
 float ParameterState::effectiveGlobal (ParameterId id) const
 {
-    return clamp01 (global_[static_cast<size_t> (id)]);
+    const auto i = static_cast<size_t> (id);
+    return clamp01 (global_[i] + globalModOffset_[i]);
 }
 
 } // namespace sculpt

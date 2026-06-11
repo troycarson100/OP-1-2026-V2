@@ -2,7 +2,9 @@
 
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_audio_processors/juce_audio_processors.h>
+
 #include "core/Engine.h"
+#include "modulation/ModTypes.h"
 
 // The one place that maps engine ParameterIds to host parameter ID strings.
 namespace bridge
@@ -98,6 +100,9 @@ public:
     juce::AudioProcessorValueTreeState& getValueTreeState() { return apvts_; }
     sculpt::Engine& getEngine()                              { return engine_; }
 
+    sculpt::ModPatch getModPatch() const;
+    void               setModPatch (const sculpt::ModPatch& patch);
+
     // Decodes WAV/AIFF/etc. into the selected track's material buffer (not RT).
     bool loadAudioFileIntoTrack (int trackIndex, const juce::File& file);
 
@@ -118,6 +123,9 @@ private:
     juce::AudioFormatManager formatManager_;
     juce::AudioProcessorValueTreeState apvts_;
     std::vector<ParameterLink> links_;
+
+    mutable juce::CriticalSection modPatchLock_;
+    sculpt::ModPatch              modPatch_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SculptSamplerAudioProcessor)
 };

@@ -7,17 +7,19 @@ namespace sculpt
 constexpr int    kNumTracks            = 4;
 constexpr int    kNumScenes            = 8;
 constexpr int    kNumMacros            = 4;
-constexpr int    kNumPages             = 6;
+constexpr int    kNumPages             = 7;
 
-// Maximum samples processed per internal chunk. Host blocks larger than
+// Encoder slots on device pages (Material..Mixer) used for mod mapping grid.
+constexpr int    kMaxModMappingEncoders  = 8;
+
+// Device pages that appear in the modulation mapping grid (Material..Mixer).
+// Keep in sync with Page enum order: Mod must be immediately after Mixer.
+constexpr int    kModMapTargetPages    = 6;
 // this are split by the Engine. All scratch buffers are sized from this.
 constexpr int    kMaxBlockSize         = 2048;
 
 // Fixed grain pool size per track. Never allocated during processing.
 constexpr int    kGrainsPerTrack       = 24;
-
-// Global modulation matrix slots (fixed, no allocation).
-constexpr int    kModMatrixSlots       = 16;
 
 // Placeholder material length per track, in seconds.
 constexpr float  kPlaceholderSeconds   = 2.0f;
