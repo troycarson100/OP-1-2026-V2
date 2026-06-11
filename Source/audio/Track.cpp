@@ -127,6 +127,12 @@ void Track::updateParameters (const ParameterState& state, int trackIndex)
     engine_.getSpace().setParams (get (ParameterId::SpaceAmount),
                                   get (ParameterId::SpaceFeedback),
                                   get (ParameterId::SpaceMix));
+
+    engine_.getMixBus().setParams (get (ParameterId::MixEqLowGain),
+                                  get (ParameterId::MixEqMidGain),
+                                  get (ParameterId::MixEqHighGain),
+                                  get (ParameterId::MixCompThreshold),
+                                  get (ParameterId::MixCompMakeup));
 }
 
 void Track::process (float* outL, float* outR, int numSamples)

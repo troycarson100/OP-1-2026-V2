@@ -7,6 +7,7 @@
 #include "SpectralFilterStage.h"
 #include "ColorStage.h"
 #include "SpaceStage.h"
+#include "MixBusStage.h"
 #include "../util/Constants.h"
 #include "../util/SmoothedValue.h"
 
@@ -16,7 +17,7 @@ namespace sculpt
 class SampleBuffer;
 
 // The DSP chain for one track:
-//   Material(tape) -> Granular -> Filter -> Color -> Space
+//   Material(tape) -> Granular -> Filter -> Color -> Space -> MixBus (EQ + comp)
 // Track owns the material and decides when this runs; TrackEngine only
 // processes audio. Scratch buffers are fixed-size members - no allocation.
 class TrackEngine
@@ -31,6 +32,8 @@ public:
     SpectralFilterStage& getSpectralFilter() { return spectralFilter_; }
     ColorStage&          getColor()          { return color_; }
     SpaceStage&          getSpace()          { return space_; }
+    MixBusStage&         getMixBus()         { return mixBus_; }
+    const MixBusStage&   getMixBus() const   { return mixBus_; }
 
     const TapePlayer&          getTape()           const { return tape_; }
     const GranularEngine&      getGranular()       const { return granular_; }
@@ -52,6 +55,7 @@ private:
     SpectralFilterStage  spectralFilter_;
     ColorStage           color_;
     SpaceStage           space_;
+    MixBusStage          mixBus_;
 
     bool spectralMode_ = false;
 

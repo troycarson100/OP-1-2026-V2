@@ -91,6 +91,8 @@ private:
                        int offset, int numSamples);
     void updateScreenModel();
 
+    void fillMixBusWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope) const;
+
     ParameterState params_;
     Clock          clock_;
     Transport      transport_;
@@ -110,6 +112,8 @@ private:
     std::array<std::array<float, kMaxBlockSize>, kNumTracks> busL_ {}, busR_ {};
     std::array<float, kNumTracks> trackPeaks_ {};
     float masterPeakL_ = 0.0f, masterPeakR_ = 0.0f;
+
+    int lastBusChunkSamples_ = 0;
 
     // Latched cross-thread requests (bitmask per track / scene index).
     std::atomic<uint32_t> pendingTriggers_ { 0 };

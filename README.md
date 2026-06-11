@@ -40,7 +40,10 @@ Requirements: CMake 3.22+, Xcode command line tools (macOS). JUCE is picked up f
 
 ```bash
 cmake -B build
-cmake --build build --target SculptSampler_Standalone SculptSampler_AU -j8
+# Prefer format targets (or SculptSampler_All). The `SculptSampler` target alone only
+# rebuilds the intermediate static library and does not relink the .app / .component / .vst3.
+cmake --build build --target SculptSampler_All -j8
+# Or individually: SculptSampler_Standalone SculptSampler_AU SculptSampler_VST3
 ```
 
 Build outputs land in `build/SculptSampler_artefacts/`.

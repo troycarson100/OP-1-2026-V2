@@ -151,6 +151,7 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     modPageViewport_.setVisible (false);
 
     rebuildPageControls();
+    instrumentPanel_.setUiPage (currentPage_);
     // 60 Hz: LCD (mod hints, Mod oscilloscope, meters) tracks audio-thread ScreenModel with less lag than 30 Hz.
     startTimerHz (60);
     setSize (980, 840);
@@ -178,6 +179,7 @@ void SculptSamplerAudioProcessorEditor::selectPage (sculpt::Page page)
 {
     currentPage_ = page;
     processor_.getEngine().setSelectedPage (page);
+    instrumentPanel_.setUiPage (currentPage_);
     rebuildPageControls();
     resized();
 }
@@ -233,6 +235,8 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
         rebuildPageControls();
         resized();
     }
+
+    instrumentPanel_.setUiPage (currentPage_);
 
     const auto& screen = processor_.getEngine().getScreenModel();
     for (int t = 0; t < sculpt::kNumTracks; ++t)

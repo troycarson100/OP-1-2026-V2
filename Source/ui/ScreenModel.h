@@ -72,6 +72,14 @@ struct ScreenModel
 
     // Mod page: oscilloscope-style source preview (see ModLcdSnapshot).
     ModLcdSnapshot modLcd {};
+
+    // Mixer page: post-mix-bus stereo peak envelope per track (same bin count as material waveform).
+    std::array<std::array<float, kMaterialWaveformBins>, kNumTracks> mixBusWaveform {};
+    // EQ band display 0..1 (0.5 = flat, mapped from +/-12 dB mix EQ gains).
+    static constexpr int kMixEqBands = 3;
+    std::array<std::array<float, kMixEqBands>, kNumTracks> mixEqBandNorm {};
+    // Compressor gain-reduction meter 0..1 (smoothed, from MixBusStage).
+    std::array<float, kNumTracks> mixCompReduction {};
 };
 
 } // namespace sculpt

@@ -153,7 +153,11 @@ void Engine::replaceTrackMaterialStereo (int trackIndex, const float* left, cons
 
 void Engine::setHostTempo (double bpm)       { clock_.setBpm (bpm); }
 void Engine::setHostPlaying (bool playing)   { transport_.setPlaying (playing); }
-void Engine::setSelectedPage (Page page)     { selectedPage_ = page; }
+void Engine::setSelectedPage (Page page)
+{
+    selectedPage_     = page;
+    screen_.selectedPage = page; // Keep LCD in sync even before the next process() / updateScreenModel().
+}
 
 void Engine::setModPatch (const ModPatch& patch)
 {
@@ -224,6 +228,8 @@ void Engine::processChunk (float** inputs, float** outputs,
                            int numInputChannels, int numOutputChannels,
                            int offset, int numSamples)
 {
+    lastBusChunkSamples_ = numSamples;
+
     const double beatAtBlockStart = clock_.getBeatPosition();
     updateModulation (inputs, numInputChannels, offset, numSamples, beatAtBlockStart);
     clock_.advance (numSamples);
@@ -368,6 +374,24 @@ void Engine::updateScreenModel()
     }
     else
         screen_.modLcd.active = false;
+
+    if (selectedPage_ == Page::Mixer)
+    {
+        for (int t = 0; t < kNumTracks; ++t)
+        {
+            const auto ts = static_cast<size_t> (t);
+            fillMixBusWaveformEnvelope (t, kMaterialWaveformBins, screen_.mixBusWaveform[ts].data ());
+
+            const float d0 = map::mixEqBandGainDb (params_.effective (t, ParameterId::MixEqLowGain));
+            const float d1 = map::mixEqBandGainDb (params_.effective (t, ParameterId::MixEqMidGain));
+            const float d2 = map::mixEqBandGainDb (params_.effective (t, ParameterId::MixEqHighGain));
+            screen_.mixEqBandNorm[ts][0] = clamp01 ((d0 + 12.0f) / 24.0f);
+            screen_.mixEqBandNorm[ts][1] = clamp01 ((d1 + 12.0f) / 24.0f);
+            screen_.mixEqBandNorm[ts][2] = clamp01 ((d2 + 12.0f) / 24.0f);
+
+            screen_.mixCompReduction[ts] = clamp01 (tracks_[ts].getEngine().getMixBus().getCompReductionMeter01 ());
+        }
+    }
 }
 
 const SampleBuffer& Engine::getTrackMaterialBuffer (int trackIndex) const
@@ -410,6 +434,47 @@ void Engine::fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* o
             const float L = buf.getSample (0, f);
             const float R = buf.getSample (rightCh, f);
             const float m = 0.5f * (std::fabs (L) + std::fabs (R));
+            if (m > peak)
+                peak = m;
+        }
+        outEnvelope[i] = clamp01 (peak);
+    }
+}
+
+void Engine::fillMixBusWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope) const
+{
+    if (outEnvelope == nullptr || numBins <= 0)
+        return;
+
+    for (int b = 0; b < numBins; ++b)
+        outEnvelope[b] = 0.0f;
+
+    const int ti = (trackIndex < 0) ? 0 : (trackIndex >= kNumTracks ? kNumTracks - 1 : trackIndex);
+    const auto ts = static_cast<size_t> (ti);
+
+    const int samples = lastBusChunkSamples_;
+    if (samples < 1)
+        return;
+
+    const float* L = busL_[ts].data();
+    const float* R = busR_[ts].data();
+
+    for (int i = 0; i < numBins; ++i)
+    {
+        int startF = static_cast<int> ((static_cast<long long> (i) * samples) / numBins);
+        int endF   = static_cast<int> ((static_cast<long long> (i + 1) * samples) / numBins);
+        if (endF <= startF)
+            endF = startF + 1;
+        if (endF > samples)
+            endF = samples;
+        if (startF >= samples)
+            continue;
+
+        float peak = 0.0f;
+        for (int f = startF; f < endF; ++f)
+        {
+            const float m = 0.5f * (std::fabs (L[static_cast<size_t> (f)])
+                                  + std::fabs (R[static_cast<size_t> (f)]));
             if (m > peak)
                 peak = m;
         }

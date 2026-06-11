@@ -14,6 +14,7 @@ void TrackEngine::prepare (double sampleRate)
     spectralFilter_.prepare (sampleRate);
     color_.prepare (sampleRate);
     space_.prepare (sampleRate);
+    mixBus_.prepare (sampleRate);
 
     materialLevel_.prepare (sampleRate, 0.02f);
     materialLevel_.snap (parameterDefault (ParameterId::MaterialLevel));
@@ -31,6 +32,7 @@ void TrackEngine::reset()
     spectralFilter_.reset();
     color_.reset();
     space_.reset();
+    mixBus_.reset();
 }
 
 void TrackEngine::process (const SampleBuffer& material, float* outL, float* outR, int numSamples)
@@ -69,6 +71,7 @@ void TrackEngine::process (const SampleBuffer& material, float* outL, float* out
 
     color_.process (outL, outR, n);
     space_.process (outL, outR, n);
+    mixBus_.process (outL, outR, n);
 }
 
 } // namespace sculpt

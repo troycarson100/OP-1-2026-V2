@@ -61,6 +61,11 @@ namespace bridge
             case P::SpaceMix:        suffix = "spaceMix"; break;
             case P::CaptureArm:      suffix = "captureArm"; break;
             case P::FilterKey:       suffix = "filterKey"; break;
+            case P::MixEqLowGain:    suffix = "mixEqLow"; break;
+            case P::MixEqMidGain:    suffix = "mixEqMid"; break;
+            case P::MixEqHighGain:   suffix = "mixEqHigh"; break;
+            case P::MixCompThreshold: suffix = "mixCompThr"; break;
+            case P::MixCompMakeup:   suffix = "mixCompMakeup"; break;
             default: break;
         }
 

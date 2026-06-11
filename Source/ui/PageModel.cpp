@@ -29,9 +29,10 @@ namespace
         // Space
         { ParameterId::SpaceAmount, ParameterId::SpaceFeedback, ParameterId::SpaceMix,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
-        // Mixer
+        // Mixer: level/pan, master out, 3-band mix EQ, compressor (stereo-linked in MixBusStage).
         { ParameterId::TrackLevel, ParameterId::TrackPan, ParameterId::OutputGain,
-          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
+          ParameterId::MixEqLowGain, ParameterId::MixEqMidGain, ParameterId::MixEqHighGain,
+          ParameterId::MixCompThreshold, ParameterId::MixCompMakeup },
         // Mod (encoder mapping lives on Mod page UI; no APVTS row here)
         { kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
     };

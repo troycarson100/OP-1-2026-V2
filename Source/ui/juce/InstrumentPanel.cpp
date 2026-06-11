@@ -386,6 +386,83 @@ namespace
         g.setColour (kModLcdDot.brighter (0.2f));
         g.drawEllipse (scanX - 4.5f, vy - 4.5f, 9.0f, 9.0f, 1.1f);
     }
+
+    // Mixer page: 3-band EQ as vertical meters + gain-reduction strip (same palette as waveform / filter).
+    void drawMixEqCompressorVisual (juce::Graphics& g, juce::Rectangle<float> area,
+                                    const std::array<float, sculpt::ScreenModel::kMixEqBands>& bandNorm,
+                                    float compReduction01)
+    {
+        if (area.isEmpty())
+            return;
+
+        compReduction01 = juce::jlimit (0.0f, 1.0f, compReduction01);
+
+        auto eqZone  = area.removeFromLeft (area.getWidth() * 0.70f);
+        const float gap = 5.0f;
+        const float cellW = (eqZone.getWidth() - gap * 2.0f) / 3.0f;
+        const char* labels[] = { "BASS", "MID", "TREBLE" };
+        const juce::Colour bandCols[] = {
+            kWaveformFill.withAlpha (0.85f),
+            juce::Colour (0xff8ab4e8).withAlpha (0.88f),
+            kAccent.withAlpha (0.82f)
+        };
+
+        const float zx = eqZone.getX();
+        const float zy = eqZone.getY();
+        const float zh = eqZone.getHeight();
+
+        for (int b = 0; b < 3; ++b)
+        {
+            juce::Rectangle<float> cell (zx + static_cast<float> (b) * (cellW + gap), zy, cellW, zh);
+
+            g.setColour (kBackground);
+            g.fillRoundedRectangle (cell, 3.0f);
+            g.setColour (kText.withAlpha (0.22f));
+            g.drawRoundedRectangle (cell, 3.0f, 1.0f);
+
+            auto meterCell = cell.reduced (2.0f, 2.0f).withTrimmedBottom (12.0f);
+            const float cy   = meterCell.getCentreY();
+            const float half = meterCell.getHeight() * 0.38f;
+            const float t    = juce::jlimit (0.0f, 1.0f, bandNorm[static_cast<size_t> (b)]);
+            const float signedExtent = (t - 0.5f) * 2.0f;
+
+            g.setColour (kText.withAlpha (0.35f));
+            g.drawHorizontalLine (juce::roundToInt (cy), meterCell.getX() + 1.0f, meterCell.getRight() - 1.0f);
+
+            if (std::fabs (signedExtent) > 0.02f)
+            {
+                juce::Rectangle<float> fill;
+                if (signedExtent > 0.0f)
+                    fill = { meterCell.getX() + 2.0f, cy - signedExtent * half,
+                             meterCell.getWidth() - 4.0f, signedExtent * half };
+                else
+                    fill = { meterCell.getX() + 2.0f, cy, meterCell.getWidth() - 4.0f, -signedExtent * half };
+
+                g.setColour (bandCols[static_cast<size_t> (b)].withAlpha (0.35f + 0.45f * std::fabs (signedExtent)));
+                g.fillRoundedRectangle (fill, 2.0f);
+            }
+
+            g.setColour (kText.withAlpha (0.55f));
+            g.setFont (juce::FontOptions (9.0f));
+            g.drawText (labels[b], cell.removeFromBottom (11.0f), juce::Justification::centred, false);
+        }
+
+        area.removeFromLeft (6.0f);
+        g.setColour (kText.withAlpha (0.5f));
+        g.setFont (juce::FontOptions (9.0f));
+        g.drawText ("COMP GR", area.removeFromTop (11.0f), juce::Justification::centredLeft, false);
+
+        auto grBar = area.reduced (0.0f, 2.0f);
+        g.setColour (kBackground);
+        g.fillRoundedRectangle (grBar, 3.0f);
+        g.setColour (kText.withAlpha (0.2f));
+        g.drawRoundedRectangle (grBar, 3.0f, 1.0f);
+
+        auto grFill = grBar.reduced (2.0f, 3.0f);
+        grFill.setWidth (juce::jmax (2.0f, grFill.getWidth() * compReduction01));
+        g.setColour (kAccent.withAlpha (0.25f + 0.65f * compReduction01));
+        g.fillRoundedRectangle (grFill, 2.0f);
+    }
 } // namespace
 
 void InstrumentPanel::setWaveformEnvelope (const float* data, int numBins)
@@ -486,17 +563,21 @@ void InstrumentPanel::paint (juce::Graphics& g)
     auto leftHdr = headerStrip.removeFromLeft (juce::jmax (0, headerStrip.getWidth() - bpmW));
     const juce::String header = "TRK " + juce::String (screen.selectedTrack + 1)
                                + "   SCENE " + juce::String::charToString (juce::juce_wchar ('A' + screen.currentScene))
-                               + "   " + juce::String (sculpt::PageModel::pageName (screen.selectedPage)).toUpperCase();
+                               + "   " + juce::String (sculpt::PageModel::pageName (uiPage_)).toUpperCase();
     g.drawText (header, leftHdr, juce::Justification::centredLeft);
     g.setColour (screen.bpmValid ? kAccent : kText.withAlpha (0.55f));
     const juce::String bpmTxt = juce::String (screen.displayBpm, 1) + " BPM";
     g.drawText (bpmTxt, headerStrip, juce::Justification::centredRight);
     g.setColour (kText);
 
-    const bool materialPage = (screen.selectedPage == sculpt::Page::Material);
-    const bool granularPage = (screen.selectedPage == sculpt::Page::Granular);
-    const bool filterPage   = (screen.selectedPage == sculpt::Page::Filter);
-    const bool modPage      = (screen.selectedPage == sculpt::Page::Mod);
+    const bool materialPage = (uiPage_ == sculpt::Page::Material);
+    const bool granularPage = (uiPage_ == sculpt::Page::Granular);
+    const bool filterPage   = (uiPage_ == sculpt::Page::Filter);
+    const bool modPage      = (uiPage_ == sculpt::Page::Mod);
+    // Prefer editor page; also treat engine-reported page as Mixer so the LCD never falls through
+    // to the 4-track meter stack if message-thread vs audio-thread page state tears briefly.
+    const bool mixerLcd     = (uiPage_ == sculpt::Page::Mixer)
+                          || (screen.selectedPage == sculpt::Page::Mixer);
     const bool waveformPage = materialPage || granularPage;
 
     // Reserve the fixed value grid strip at the bottom on every page.
@@ -535,6 +616,36 @@ void InstrumentPanel::paint (juce::Graphics& g)
         area.removeFromTop (4);
         drawOneTrackMeter (g, area.removeFromTop (rowH), screen, st);
         drawMasterMeter (g, area.removeFromTop (rowH), screen);
+    }
+    else if (mixerLcd)
+    {
+        // Mix bus waveform + EQ/comp — no 4-track meter stack; no secondary strip (frees height for waveform).
+        constexpr int mixStripH   = 48;
+        const int     padBottom = 8;
+        const int     topBudget = area.getHeight();
+
+        const int reserved = mixStripH + padBottom;
+        const int wfMax    = juce::jmax (0, topBudget - reserved);
+        constexpr int wfMin = 56;
+        const int wfWant   = juce::roundToInt (static_cast<float> (topBudget) * 0.72f);
+        const int wfH      = juce::jlimit (juce::jmin (wfMin, wfMax), wfMax, wfWant);
+
+        const int st = juce::jlimit (0, sculpt::kNumTracks - 1, screen.selectedTrack);
+
+        auto wfArea = area.removeFromTop (wfH).toFloat().reduced (1.0f, 2.0f);
+        g.setColour (kLcdWaveformBg);
+        g.fillRoundedRectangle (wfArea, 3.0f);
+        drawSymmetricPeaksStyled (g, wfArea, screen.mixBusWaveform[static_cast<size_t> (st)],
+                                  kWaveformFill.withAlpha (0.26f),
+                                  kWaveformStroke.withAlpha (0.92f), 1.2f);
+
+        drawPlayhead (g, wfArea, screen.tapePosition[static_cast<size_t> (st)]);
+
+        auto mixStrip = area.removeFromTop (mixStripH).toFloat().reduced (1.0f, 1.0f);
+        drawMixEqCompressorVisual (g, mixStrip, screen.mixEqBandNorm[static_cast<size_t> (st)],
+                                   screen.mixCompReduction[static_cast<size_t> (st)]);
+
+        area.removeFromTop (padBottom);
     }
     else if (modPage)
     {

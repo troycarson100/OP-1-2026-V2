@@ -65,6 +65,7 @@ target_sources(SculptSampler PRIVATE
     Source/audio/SpectralFilterStage.cpp
     Source/audio/ColorStage.cpp
     Source/audio/SpaceStage.cpp
+    Source/audio/MixBusStage.cpp
     Source/audio/Mixer.cpp
     Source/audio/Envelope.cpp
     Source/audio/OnePole.cpp

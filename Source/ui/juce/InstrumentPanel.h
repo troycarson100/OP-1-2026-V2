@@ -20,6 +20,10 @@ public:
     void setScreenProvider (ScreenProvider fn) { screenProvider_ = std::move (fn); }
     void setBpmDragHandler (BpmDragHandler fn) { bpmDragHandler_ = std::move (fn); }
 
+    // Which device page the editor is showing (message thread). LCD layout follows this so the
+    // MIX view is not stuck on the meter-only branch while waiting for the next audio callback.
+    void setUiPage (sculpt::Page page) { uiPage_ = page; }
+
     void setWaveformEnvelope (const float* data, int numBins);
     void clearWaveformEnvelope();
 
@@ -36,6 +40,7 @@ private:
 
     ScreenProvider   screenProvider_;
     BpmDragHandler   bpmDragHandler_;
+    sculpt::Page     uiPage_ = sculpt::Page::Granular;
     std::array<float, sculpt::kMaterialWaveformBins> waveformPeaks_{};
 
     bool   bpmDragging_   = false;

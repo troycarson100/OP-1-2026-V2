@@ -59,6 +59,13 @@ enum class ParameterId : int
     // Spectral: tonic pitch class 0=C .. 11=B (normalized steps; use snap in Track).
     FilterKey,
 
+    // Mix bus (after Space, before fader): 3-band tone EQ + stereo-linked compressor.
+    MixEqLowGain,
+    MixEqMidGain,
+    MixEqHighGain,
+    MixCompThreshold,
+    MixCompMakeup,
+
     Count
 };
 
@@ -110,6 +117,11 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::SpaceMix:        return 0.25f;
         case ParameterId::CaptureArm:      return 0.0f;
         case ParameterId::FilterKey:       return 0.0f;   // C
+        case ParameterId::MixEqLowGain:
+        case ParameterId::MixEqMidGain:
+        case ParameterId::MixEqHighGain:   return 0.5f;   // 0 dB (bipolar center)
+        case ParameterId::MixCompThreshold: return 0.82f; // light compression by default
+        case ParameterId::MixCompMakeup:    return 0.0f;  // unity makeup until dialed in
         default:                           return 0.0f;
     }
 }
@@ -144,6 +156,16 @@ namespace map
     inline float colorDriveGain (float n)    { return 1.0f + n * 9.0f; }
     inline float spaceFeedback (float n)     { return n * 0.85f; }
     inline float toneCutoffHz (float n)      { return 400.0f * std::pow (2.0f, n * 5.0f); }    // 400Hz .. ~12.8kHz
+
+    // Mix EQ: +/- 12 dB per band; 0.5 = flat.
+    inline float mixEqBandGainDb (float n)   { return (clamp01 (n) - 0.5f) * 24.0f; }
+
+    // Mix compressor threshold (dBFS, peak detector). Higher = less compression.
+    // Maps ~-45 .. +12 dBFS so fully clockwise is effectively "off" for normal program material.
+    inline float mixCompThresholdDb (float n) { return -45.0f + clamp01 (n) * 57.0f; }
+
+    // Makeup gain after compression, 0 .. +14 dB.
+    inline float mixCompMakeupDb (float n)   { return clamp01 (n) * 14.0f; }
 } // namespace map
 
 inline const char* parameterName (ParameterId id)
@@ -185,6 +207,11 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::SpaceMix:        return "Space Mix";
         case ParameterId::CaptureArm:      return "Input Capture";
         case ParameterId::FilterKey:       return "Key";
+        case ParameterId::MixEqLowGain:    return "Mix Bass";
+        case ParameterId::MixEqMidGain:    return "Mix Mid";
+        case ParameterId::MixEqHighGain:   return "Mix Treble";
+        case ParameterId::MixCompThreshold: return "Mix Comp Thr";
+        case ParameterId::MixCompMakeup:   return "Mix Comp Gain";
         default:                           return "Unknown";
     }
 }
