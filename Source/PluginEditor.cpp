@@ -151,7 +151,8 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     modPageViewport_.setVisible (false);
 
     rebuildPageControls();
-    startTimerHz (30);
+    // 60 Hz: LCD (mod hints, Mod oscilloscope, meters) tracks audio-thread ScreenModel with less lag than 30 Hz.
+    startTimerHz (60);
     setSize (980, 840);
 }
 

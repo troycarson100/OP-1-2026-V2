@@ -24,4 +24,9 @@ namespace sculpt_editor
     inline const juce::Colour kModLcdModStroke { 0xffe8734a };
     inline const juce::Colour kModLcdScanner { 0xffffffff };
     inline const juce::Colour kModLcdDot { 0xffffcc66 };
+
+    // Parameter grid: live modulation hint (LCD value cells)
+    inline const juce::Colour kParamModDot { 0xff4a9fff };
+    inline const juce::Colour kParamModBarBg { 0xff2a2e36 };
+    inline const juce::Colour kParamModThumb { 0xfff5f5f5 };
 }

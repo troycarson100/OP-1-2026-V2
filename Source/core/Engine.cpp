@@ -326,6 +326,7 @@ void Engine::updateScreenModel()
     screen_.materialLoopEnd01   = params_.effective (selected, ParameterId::LoopEnd);
 
     int visible = 0;
+    screen_.paramModOffset.fill (0.0f);
     for (int slot = 0; slot < kMaxParamsPerPage; ++slot)
     {
         const ParameterId id = PageModel::parameterForSlot (selectedPage_, slot);
@@ -337,6 +338,9 @@ void Engine::updateScreenModel()
         screen_.paramValues[ss] = isTrackParameter (id)
                                     ? params_.effective (selected, id)
                                     : params_.effectiveGlobal (id);
+        screen_.paramModOffset[ss] = isTrackParameter (id)
+                                         ? params_.getTrackModOffset (selected, id)
+                                         : params_.getGlobalModOffset (id);
         ++visible;
     }
     screen_.numVisibleParams = visible;

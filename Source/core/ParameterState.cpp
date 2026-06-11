@@ -83,4 +83,16 @@ float ParameterState::effectiveGlobal (ParameterId id) const
     return clamp01 (global_[i] + globalModOffset_[i]);
 }
 
+float ParameterState::getTrackModOffset (int track, ParameterId id) const
+{
+    if (track < 0 || track >= kNumTracks)
+        return 0.0f;
+    return modOffset_[static_cast<size_t> (track)][static_cast<size_t> (id)];
+}
+
+float ParameterState::getGlobalModOffset (ParameterId id) const
+{
+    return globalModOffset_[static_cast<size_t> (id)];
+}
+
 } // namespace sculpt

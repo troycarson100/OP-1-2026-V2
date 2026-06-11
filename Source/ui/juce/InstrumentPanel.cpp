@@ -193,37 +193,77 @@ namespace
     {
         const int cellW = area.getWidth() / 4;
         const int cellH = area.getHeight() / 2;
+        constexpr float kModDead = 1.0e-5f;
 
         for (int slot = 0; slot < 8; ++slot)
         {
             const int col = slot % 4;
             const int row = slot / 4;
-            auto cell = juce::Rectangle<int> (area.getX() + col * cellW,
-                                              area.getY() + row * cellH,
-                                              cellW, cellH).reduced (3, 2);
+            const juce::Rectangle<int> fullCell = juce::Rectangle<int> (area.getX() + col * cellW,
+                                                                         area.getY() + row * cellH,
+                                                                         cellW, cellH)
+                                                    .reduced (3, 2);
 
             g.setColour (kBackground);
-            g.fillRoundedRectangle (cell.toFloat(), 3.0f);
+            g.fillRoundedRectangle (fullCell.toFloat(), 3.0f);
 
-            if (slot < screen.numVisibleParams)
-            {
-                const auto ps = static_cast<size_t> (slot);
-                const char* name = screen.paramNames[ps];
-                const float v    = juce::jlimit (0.0f, 1.0f, screen.paramValues[ps]);
-                g.setColour (kText.withAlpha (0.85f));
-                g.setFont (juce::FontOptions (10.0f));
-                g.drawText (name != nullptr ? name : "?",
-                            cell.removeFromTop (cell.getHeight() / 2),
-                            juce::Justification::centred, true);
-                g.setColour (kAccent);
-                g.setFont (juce::FontOptions (12.0f));
-                const auto pid = screen.paramIds[ps];
-                g.drawText (formatParamCellValue (pid, v), cell, juce::Justification::centred, true);
-            }
-            else
+            if (slot >= screen.numVisibleParams)
             {
                 g.setColour (kText.withAlpha (0.35f));
-                g.drawText ("-", cell, juce::Justification::centred, true);
+                g.drawText ("-", fullCell, juce::Justification::centred, true);
+                continue;
+            }
+
+            const auto   ps   = static_cast<size_t> (slot);
+            const char*  name = screen.paramNames[ps];
+            const float  v    = juce::jlimit (0.0f, 1.0f, screen.paramValues[ps]);
+            const float  mod  = screen.paramModOffset[ps];
+            const bool   showMod = std::fabs (mod) > kModDead;
+
+            juce::Rectangle<int> labelArea = fullCell.withHeight (fullCell.getHeight() / 2);
+            juce::Rectangle<int> valueArea = fullCell.withTrimmedTop (fullCell.getHeight() / 2);
+            if (showMod)
+                valueArea = valueArea.withTrimmedBottom (8);
+
+            g.setColour (kText.withAlpha (0.85f));
+            g.setFont (juce::FontOptions (10.0f));
+            g.drawText (name != nullptr ? name : "?", labelArea, juce::Justification::centred, true);
+            g.setColour (kAccent);
+            g.setFont (juce::FontOptions (12.0f));
+            const auto pid = screen.paramIds[ps];
+            g.drawText (formatParamCellValue (pid, v), valueArea, juce::Justification::centred, true);
+
+            if (showMod)
+            {
+                const float dotR = 2.5f;
+                const float dotX = static_cast<float> (fullCell.getRight()) - 6.0f - dotR;
+                const float dotY = static_cast<float> (fullCell.getY()) + 6.0f;
+                g.setColour (kParamModDot);
+                g.fillEllipse (dotX - dotR, dotY - dotR, dotR * 2.0f, dotR * 2.0f);
+
+                const int barH = 3;
+                const int padX = 5;
+                auto      bar    = fullCell.withTrimmedTop (fullCell.getHeight() - barH - 4)
+                                  .withTrimmedBottom (1)
+                                  .withTrimmedLeft (padX)
+                                  .withTrimmedRight (padX);
+                g.setColour (kParamModBarBg);
+                g.fillRoundedRectangle (bar.toFloat(), 1.0f);
+
+                constexpr float thumbW = 5.0f;
+                // 1:1 with summed bipolar-style offset (same scale as engine mod delta). Hard gain
+                // (e.g. *6) pegged the thumb at the bar ends most of a sine cycle — avoid that here.
+                const float shaped = juce::jlimit (-1.0f, 1.0f, mod);
+                const float pos01  = juce::jlimit (0.0f, 1.0f, 0.5f + 0.5f * shaped);
+                const float     barF   = static_cast<float> (bar.getX());
+                const float     avail  = juce::jmax (0.0f, static_cast<float> (bar.getWidth()) - thumbW);
+                const float     thumbX = barF + pos01 * avail;
+
+                g.setColour (kParamModThumb);
+                g.fillRect (juce::Rectangle<float> (thumbX,
+                                                     static_cast<float> (bar.getY()) + 0.5f,
+                                                     thumbW,
+                                                     static_cast<float> (juce::jmax (1, bar.getHeight() - 1))));
             }
         }
     }

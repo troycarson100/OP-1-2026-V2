@@ -35,6 +35,10 @@ public:
     float effective (int track, ParameterId id) const;
     float effectiveGlobal (ParameterId id) const;
 
+    // Current block's summed modulation delta (before clamp in effective()).
+    float getTrackModOffset (int track, ParameterId id) const;
+    float getGlobalModOffset (ParameterId id) const;
+
 private:
     std::array<float, kNumParameters> global_ {};
     std::array<std::array<float, kNumParameters>, kNumTracks> track_ {};

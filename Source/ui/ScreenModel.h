@@ -57,6 +57,7 @@ struct ScreenModel
     // Parameter readout for the selected page/track.
     std::array<const char*, kMaxParamsPerPage> paramNames {};
     std::array<float, kMaxParamsPerPage> paramValues {};
+    std::array<float, kMaxParamsPerPage> paramModOffset {}; // summed mod delta this block (for LCD hints)
     std::array<ParameterId, kMaxParamsPerPage> paramIds {};
     int numVisibleParams = 0;
 
