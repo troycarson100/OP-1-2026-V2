@@ -1,8 +1,43 @@
 #include "Engine.h"
 #include "../util/MathUtils.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace sculpt
 {
+namespace
+{
+    void computeMaterialWaveView (int frames, float zoom01, float center01, float& view0, float& view1)
+    {
+        if (frames < 2)
+        {
+            view0 = 0.0f;
+            view1 = 1.0f;
+            return;
+        }
+
+        const float lastF = static_cast<float> (frames - 1);
+        const float frac  = map::materialWaveVisibleFraction (zoom01);
+        if (frac >= 0.98f)
+        {
+            view0 = 0.0f;
+            view1 = 1.0f;
+            return;
+        }
+
+        const float span  = std::max (1.0f, lastF * frac);
+        const float focus = clamp01 (center01) * lastF;
+        float       start = focus - 0.5f * span;
+        if (start < 0.0f)
+            start = 0.0f;
+        if (start + span > lastF)
+            start = lastF - span;
+
+        view0 = start / lastF;
+        view1 = (start + span) / lastF;
+    }
+} // namespace
 
 Engine::Engine() = default;
 
@@ -331,6 +366,27 @@ void Engine::updateScreenModel()
     screen_.materialLoopStart01 = params_.effective (selected, ParameterId::LoopStart);
     screen_.materialLoopEnd01   = params_.effective (selected, ParameterId::LoopEnd);
 
+    if (prepared_ && sampleRate_ > 1.0e-6 && matBuf.getNumFrames() > 0)
+        screen_.materialDurationSec = static_cast<float> (static_cast<double> (matBuf.getNumFrames()) / sampleRate_);
+    else
+        screen_.materialDurationSec = 0.0f;
+
+    const int matFrames = matBuf.getNumFrames();
+    if (selectedPage_ == Page::Material && matFrames > 1)
+    {
+        const auto& selTrack = tracks_[static_cast<size_t> (selected)];
+        const float zoom     = params_.effective (selected, ParameterId::MaterialWaveZoom);
+        const float ph       = params_.effective (selected, ParameterId::MaterialPlayhead);
+        const float center   = selTrack.isPlaying() ? selTrack.getTapePositionNormalized () : ph;
+        computeMaterialWaveView (matFrames, zoom, center, screen_.materialViewStart01,
+                                 screen_.materialViewEnd01);
+    }
+    else
+    {
+        screen_.materialViewStart01 = 0.0f;
+        screen_.materialViewEnd01   = 1.0f;
+    }
+
     int visible = 0;
     screen_.paramModOffset.fill (0.0f);
     for (int slot = 0; slot < kMaxParamsPerPage; ++slot)
@@ -400,7 +456,8 @@ const SampleBuffer& Engine::getTrackMaterialBuffer (int trackIndex) const
     return tracks_[static_cast<size_t> (ti)].getMaterial().getBuffer();
 }
 
-void Engine::fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope) const
+void Engine::fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope,
+                                           bool applyWaveZoom) const
 {
     if (outEnvelope == nullptr || numBins <= 0)
         return;
@@ -410,19 +467,39 @@ void Engine::fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* o
 
     const int ti = (trackIndex < 0) ? 0 : (trackIndex >= kNumTracks ? kNumTracks - 1 : trackIndex);
     const SampleBuffer& buf = tracks_[static_cast<size_t> (ti)].getMaterial().getBuffer();
-    const int frames = buf.getNumFrames();
-    const int channels = buf.getNumChannels();
+    const int           frames = buf.getNumFrames();
+    const int           channels = buf.getNumChannels();
     if (frames < 1 || channels < 1)
         return;
 
     const int rightCh = channels > 1 ? 1 : 0;
 
+    float view0 = 0.0f;
+    float view1 = 1.0f;
+    if (applyWaveZoom && frames > 1)
+    {
+        const float zoom   = params_.effective (ti, ParameterId::MaterialWaveZoom);
+        const float ph     = params_.effective (ti, ParameterId::MaterialPlayhead);
+        const auto& trk    = tracks_[static_cast<size_t> (ti)];
+        const float center = trk.isPlaying() ? trk.getTapePositionNormalized () : ph;
+        computeMaterialWaveView (frames, zoom, center, view0, view1);
+    }
+
+    const double last = static_cast<double> (frames - 1);
+    const double win0 = static_cast<double> (view0) * last;
+    const double win1 = static_cast<double> (view1) * last;
+    const double winLen = std::max (1.0e-6, win1 - win0);
+
     for (int i = 0; i < numBins; ++i)
     {
-        int startF = static_cast<int> ((static_cast<long long> (i) * frames) / numBins);
-        int endF   = static_cast<int> ((static_cast<long long> (i + 1) * frames) / numBins);
+        const double t0 = win0 + (static_cast<double> (i) / static_cast<double> (numBins)) * winLen;
+        const double t1 = win0 + (static_cast<double> (i + 1) / static_cast<double> (numBins)) * winLen;
+        int          startF = static_cast<int> (std::floor (t0));
+        int          endF   = static_cast<int> (std::ceil (t1));
         if (endF <= startF)
             endF = startF + 1;
+        if (startF < 0)
+            startF = 0;
         if (endF > frames)
             endF = frames;
         if (startF >= frames)

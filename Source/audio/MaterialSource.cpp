@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include "MaterialSource.h"
 #include "../util/MathUtils.h"
@@ -9,14 +10,20 @@ namespace sculpt
 void MaterialSource::prepare (double sampleRate, float seconds)
 {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
-    const int frames = static_cast<int> (sampleRate_ * static_cast<double> (seconds));
-    buffer_.resize (2, frames);
+    const int minFrames = static_cast<int> (sampleRate_ * static_cast<double> (seconds));
+    const int curFrames = buffer_.getNumFrames();
+    // Grow-only: keep a loaded buffer from being truncated when the minimum capacity grows.
+    const int target = std::max (minFrames, curFrames);
+    if (target != curFrames)
+        buffer_.resize (2, target);
 }
 
 // All placeholders are built from whole numbers of cycles so the buffer
 // loops without clicks.
 void MaterialSource::generatePlaceholder (PlaceholderType type)
 {
+    userMaterial_ = false;
+
     const int frames = buffer_.getNumFrames();
     if (frames < 2)
         return;
@@ -93,6 +100,7 @@ void MaterialSource::loadStereoPCM (const float* left, const float* right, int n
     if (left == nullptr || numFrames < 1)
         return;
 
+    userMaterial_ = true;
     buffer_.resize (2, numFrames);
     for (int i = 0; i < numFrames; ++i)
     {

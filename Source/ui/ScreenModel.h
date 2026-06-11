@@ -52,6 +52,11 @@ struct ScreenModel
     float materialLoopStart01 = 0.0f;
     float materialLoopEnd01   = 1.0f;
 
+    // Material waveform: total length (seconds) and horizontal view window across the buffer.
+    float materialDurationSec = 0.0f;
+    float materialViewStart01 = 0.0f;
+    float materialViewEnd01   = 1.0f;
+
     std::array<float, kNumMacros> macroValues {};
 
     // Parameter readout for the selected page/track.

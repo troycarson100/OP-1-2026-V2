@@ -66,6 +66,8 @@ namespace bridge
             case P::MixEqHighGain:   suffix = "mixEqHigh"; break;
             case P::MixCompThreshold: suffix = "mixCompThr"; break;
             case P::MixCompMakeup:   suffix = "mixCompMakeup"; break;
+            case P::MaterialWaveZoom: suffix = "materialWaveZoom"; break;
+            case P::MaterialPlayhead: suffix = "materialPlayhead"; break;
             default: break;
         }
 

@@ -3,7 +3,10 @@
 #include "util/Constants.h"
 #include "core/FilterScales.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 namespace
@@ -269,17 +272,29 @@ bool SculptSamplerAudioProcessor::loadAudioFileIntoTrack (int trackIndex, const 
         return false;
 
     const double hostSr = getSampleRate() > 0.0 ? getSampleRate() : reader->sampleRate;
-    const double fileSr  = reader->sampleRate > 0.0 ? reader->sampleRate : hostSr;
-    const int    maxOut  = static_cast<int> (hostSr * static_cast<double> (sculpt::kMaxCaptureSeconds));
+    const double fileSr = reader->sampleRate > 0.0 ? reader->sampleRate : hostSr;
+    const double importSec = static_cast<double> (sculpt::kMaxImportSeconds);
 
-    const juce::int64 maxSrcToRead = static_cast<juce::int64> (std::ceil (fileSr * static_cast<double> (sculpt::kMaxCaptureSeconds) * 2.0));
-    const int         srcRead      = static_cast<int> (juce::jmin (srcFrames64, maxSrcToRead));
+    const juce::int64 maxSrcFrames = static_cast<juce::int64> (std::ceil (fileSr * importSec));
+    const juce::int64 srcToRead64  = std::min (srcFrames64, maxSrcFrames);
+    if (srcToRead64 < 1)
+        return false;
+
+    const juce::int64 maxHostFrames64 = static_cast<juce::int64> (std::ceil (hostSr * importSec));
+    const juce::int64 outFrames64     = static_cast<juce::int64> (std::ceil (static_cast<double> (srcToRead64) * hostSr / fileSr));
+    const juce::int64 outCapped64     = std::min (outFrames64, maxHostFrames64);
+    if (outCapped64 < 1
+        || outCapped64 > static_cast<juce::int64> (std::numeric_limits<int>::max () - 4))
+        return false;
+
+    const int srcRead = static_cast<int> (std::min (srcToRead64,
+                                                    static_cast<juce::int64> (std::numeric_limits<int>::max () - 4)));
+    const int outFrames = static_cast<int> (outCapped64);
 
     const int srcCh = juce::jlimit (1, 64, static_cast<int> (reader->numChannels));
     juce::AudioBuffer<float> srcBuf (srcCh, srcRead);
     reader->read (&srcBuf, 0, srcRead, 0, true, true);
 
-    const int outFrames = juce::jmin (maxOut, static_cast<int> (std::ceil (static_cast<double> (srcRead) * hostSr / fileSr)));
     if (outFrames < 1)
         return false;
 

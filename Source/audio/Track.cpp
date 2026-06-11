@@ -14,9 +14,12 @@ void Track::prepare (double sampleRate, int trackIndex)
 
     // Each track gets distinct placeholder material so the box makes a
     // four-layer texture out of the gate.
-    using PT = MaterialSource::PlaceholderType;
-    static constexpr PT placeholderForTrack[kNumTracks] = { PT::Tone, PT::Wave, PT::Noise, PT::Pulse };
-    material_.generatePlaceholder (placeholderForTrack[trackIndex % kNumTracks]);
+    if (! material_.hasUserMaterial())
+    {
+        using PT = MaterialSource::PlaceholderType;
+        static constexpr PT placeholderForTrack[kNumTracks] = { PT::Tone, PT::Wave, PT::Noise, PT::Pulse };
+        material_.generatePlaceholder (placeholderForTrack[trackIndex % kNumTracks]);
+    }
 
     recorder_.prepare (material_.getBuffer());
     engine_.prepare (sampleRate);
@@ -82,6 +85,11 @@ void Track::updateParameters (const ParameterState& state, int trackIndex)
     tape.setSpeedRatio (map::tapeSpeedRatio (get (ParameterId::TapeSpeed)));
     tape.setLoopRegion (get (ParameterId::LoopStart), get (ParameterId::LoopEnd));
     tape.setLevel (1.0f);
+
+    const int matFrames = material_.getBuffer().getNumFrames();
+    if (! playing_)
+        tape.seekNormalized (get (ParameterId::MaterialPlayhead), matFrames,
+                             get (ParameterId::LoopStart), get (ParameterId::LoopEnd));
 
     GranularEngine::Params gp;
     gp.position = get (ParameterId::GrainPosition);

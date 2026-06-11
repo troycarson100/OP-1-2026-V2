@@ -30,6 +30,10 @@ constexpr float  kMaxSpaceSeconds      = 0.6f;
 // Maximum capture buffer length per track, in seconds.
 constexpr float  kMaxCaptureSeconds    = 8.0f;
 
+// Maximum length when importing a file from disk (message thread). Keeps RAM bounded;
+// material buffer grows to the resampled length up to this cap per track.
+constexpr float  kMaxImportSeconds     = 1800.0f; // 30 minutes
+
 constexpr double kDefaultSampleRate    = 44100.0;
 
 // UI / message-thread waveform preview bins (Material page LCD). Not used on audio thread.

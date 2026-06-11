@@ -255,7 +255,8 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
         || screen.selectedPage == sculpt::Page::Granular)
     {
         std::array<float, sculpt::kMaterialWaveformBins> env {};
-        engine.fillMaterialWaveformEnvelope (track, sculpt::kMaterialWaveformBins, env.data());
+        const bool materialZoom = (currentPage_ == sculpt::Page::Material);
+        engine.fillMaterialWaveformEnvelope (track, sculpt::kMaterialWaveformBins, env.data (), materialZoom);
         instrumentPanel_.setWaveformEnvelope (env.data(), sculpt::kMaterialWaveformBins);
     }
     else

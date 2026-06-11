@@ -25,6 +25,9 @@ public:
 
     float getPositionNormalized (int numFrames) const;
 
+    // Snap read position to normalized time within the loop region (message / param sync).
+    void seekNormalized (float position01, int numFrames, float loopStart01, float loopEnd01);
+
     // Adds playback into outL/outR.
     void process (const SampleBuffer& buffer, float* outL, float* outR, int numSamples);
 

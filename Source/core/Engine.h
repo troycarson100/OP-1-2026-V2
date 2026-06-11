@@ -80,7 +80,9 @@ public:
     const SampleBuffer& getTrackMaterialBuffer (int trackIndex) const;
 
     // Message / UI thread only: peak envelope (one value per bin, 0..1) for waveform LCD.
-    void fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope) const;
+    // When applyWaveZoom is true, uses MaterialWaveZoom + tape position to window the view.
+    void fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope,
+                                       bool applyWaveZoom) const;
 
 private:
     void applyPendingRequests();

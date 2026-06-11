@@ -34,9 +34,14 @@ public:
 
     bool hasMaterial() const { return buffer_.getNumFrames() > 0; }
 
+    // True after loadStereoPCM; false after generated placeholder. Used so prepare()
+    // does not wipe user-imported audio when regenerating defaults.
+    bool hasUserMaterial() const noexcept { return userMaterial_; }
+
 private:
     SampleBuffer buffer_;
-    double sampleRate_ = 44100.0;
+    double       sampleRate_ = 44100.0;
+    bool         userMaterial_ = false;
 };
 
 } // namespace sculpt

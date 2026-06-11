@@ -2,6 +2,8 @@
 #include "SampleBuffer.h"
 #include "../util/MathUtils.h"
 
+#include <algorithm>
+
 namespace sculpt
 {
 
@@ -27,6 +29,35 @@ void TapePlayer::setLoopRegion (float start01, float end01)
 float TapePlayer::getPositionNormalized (int numFrames) const
 {
     return numFrames > 1 ? static_cast<float> (position_) / static_cast<float> (numFrames) : 0.0f;
+}
+
+void TapePlayer::seekNormalized (float position01, int numFrames, float loopStart01, float loopEnd01)
+{
+    if (numFrames < 2)
+    {
+        position_ = 0.0;
+        return;
+    }
+
+    const double last = static_cast<double> (numFrames - 1);
+    const double rs   = static_cast<double> (clamp01 (loopStart01)) * last;
+    const double re   = static_cast<double> (clamp01 (loopEnd01)) * last;
+    const double len  = re - rs;
+    if (len < 1.0)
+    {
+        position_ = 0.0;
+        return;
+    }
+
+    double p = static_cast<double> (clamp01 (position01)) * last;
+    if (p < rs)
+        p = rs;
+    // Tape process treats position >= regionEnd as outside; stay just inside the end.
+    const double maxP = std::max (rs, re - 1.0e-4);
+    if (p > maxP)
+        p = maxP;
+
+    position_ = p;
 }
 
 void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, int numSamples)

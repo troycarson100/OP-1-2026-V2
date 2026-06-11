@@ -11,7 +11,8 @@ namespace
     {
         // Material
         { ParameterId::MaterialLevel, ParameterId::TapeSpeed, ParameterId::LoopStart,
-          ParameterId::LoopEnd, ParameterId::CaptureArm, kEmpty, kEmpty, kEmpty },
+          ParameterId::LoopEnd, ParameterId::CaptureArm, ParameterId::MaterialPlayhead,
+          ParameterId::MaterialWaveZoom, kEmpty },
         // Granular
         { ParameterId::GrainPosition, ParameterId::GrainSize, ParameterId::GrainDensity,
           ParameterId::GrainPitch, ParameterId::GrainSpray, ParameterId::GrainTexture,

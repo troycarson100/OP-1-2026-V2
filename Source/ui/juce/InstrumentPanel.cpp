@@ -29,6 +29,102 @@ namespace
         g.fillRect (band);
     }
 
+    void drawMaterialLoopShade (juce::Graphics& g, juce::Rectangle<float> rect,
+                                float lo01, float hi01, float view0, float view1)
+    {
+        float lo = juce::jmin (lo01, hi01);
+        float hi = juce::jmax (lo01, hi01);
+        lo = juce::jlimit (0.0f, 1.0f, lo);
+        hi = juce::jlimit (0.0f, 1.0f, hi);
+        if (hi - lo < 0.002f)
+            return;
+        const float span = juce::jmax (1.0e-5f, view1 - view0);
+        const float x0   = rect.getX() + (lo - view0) / span * rect.getWidth();
+        const float x1   = rect.getX() + (hi - view0) / span * rect.getWidth();
+        auto        band = juce::Rectangle<float> (x0, rect.getY(), juce::jmax (1.0f, x1 - x0), rect.getHeight());
+        band = band.getIntersection (rect);
+        if (band.isEmpty())
+            return;
+        g.setColour (kWaveformLoopShade);
+        g.fillRect (band);
+    }
+
+    juce::String formatMaterialTimeLabel (float seconds)
+    {
+        if (seconds < 0.0f)
+            seconds = 0.0f;
+        if (seconds < 60.0f)
+            return juce::String (seconds, 2) + "s";
+        const int   m = static_cast<int> (seconds / 60.0f);
+        const float s = seconds - static_cast<float> (m) * 60.0f;
+        return juce::String (m) + ":" + juce::String (s, 1);
+    }
+
+    float pickMaterialGridStepSeconds (float spanSec)
+    {
+        const float cands[] = { 0.05f, 0.1f,  0.2f,  0.5f,  1.0f,  2.0f,  5.0f,  10.0f,
+                                15.0f, 30.0f, 60.0f, 120.0f, 300.0f, 600.0f, 1800.0f };
+        for (float s : cands)
+            if (spanSec / s <= 7.5f)
+                return s;
+        return cands[14];
+    }
+
+    void drawMaterialTimeGrid (juce::Graphics& g, juce::Rectangle<float> rect,
+                               const sculpt::ScreenModel& screen)
+    {
+        const float dur = screen.materialDurationSec;
+        const float v0  = screen.materialViewStart01;
+        const float v1  = screen.materialViewEnd01;
+        if (dur < 1.0e-4f || v1 <= v0 + 1.0e-5f)
+            return;
+
+        const float t0   = dur * v0;
+        const float t1   = dur * v1;
+        const float span = juce::jmax (1.0e-4f, t1 - t0);
+        const float step = pickMaterialGridStepSeconds (span);
+
+        constexpr float labelBandH = 11.0f;
+        auto            plot       = rect.withTrimmedBottom (labelBandH);
+
+        g.setColour (kText.withAlpha (0.14f));
+        const float minorStep = step * 0.2f;
+        if (span / minorStep < 48.0f)
+        {
+            for (float t = std::ceil (t0 / minorStep) * minorStep; t <= t1 + 1.0e-4f; t += minorStep)
+            {
+                const float nx = (t - t0) / span;
+                const float x  = rect.getX() + nx * rect.getWidth();
+                if (x < rect.getX() - 1.0f || x > rect.getRight() + 1.0f)
+                    continue;
+                g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
+            }
+        }
+
+        g.setColour (kText.withAlpha (0.22f));
+        for (float t = std::ceil (t0 / step) * step; t <= t1 + 1.0e-4f; t += step)
+        {
+            const float nx = (t - t0) / span;
+            const float x  = rect.getX() + nx * rect.getWidth();
+            if (x < rect.getX() - 1.0f || x > rect.getRight() + 1.0f)
+                continue;
+            g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
+        }
+
+        g.setColour (kText.withAlpha (0.48f));
+        g.setFont (juce::FontOptions (8.0f));
+        for (float t = std::ceil (t0 / step) * step; t <= t1 + 1.0e-4f; t += step)
+        {
+            const float nx = (t - t0) / span;
+            const float x  = rect.getX() + nx * rect.getWidth();
+            if (x < rect.getX() - 2.0f || x > rect.getRight() - 2.0f)
+                continue;
+            const juce::String txt = formatMaterialTimeLabel (t);
+            g.drawText (txt, juce::Rectangle<float> (x - 14.0f, plot.getBottom() - 1.0f, 28.0f, labelBandH),
+                        juce::Justification::centred, true);
+        }
+    }
+
     void drawSymmetricEnvelope (juce::Graphics& g, juce::Rectangle<float> rect,
                                 const std::array<float, sculpt::kMaterialWaveformBins>& peaks)
     {
@@ -600,7 +696,16 @@ void InstrumentPanel::paint (juce::Graphics& g)
         auto wfArea = area.removeFromTop (wfH).toFloat().reduced (1.0f, 2.0f);
         g.setColour (kLcdWaveformBg);
         g.fillRoundedRectangle (wfArea, 3.0f);
-        drawLoopRegion (g, wfArea, screen.materialLoopStart01, screen.materialLoopEnd01);
+        if (materialPage)
+        {
+            drawMaterialLoopShade (g, wfArea, screen.materialLoopStart01, screen.materialLoopEnd01,
+                                   screen.materialViewStart01, screen.materialViewEnd01);
+            drawMaterialTimeGrid (g, wfArea, screen);
+        }
+        else
+        {
+            drawLoopRegion (g, wfArea, screen.materialLoopStart01, screen.materialLoopEnd01);
+        }
         drawSymmetricEnvelope (g, wfArea, waveformPeaks_);
         if (granularPage)
             drawGrainOverlay (g, wfArea, screen);
@@ -611,7 +716,16 @@ void InstrumentPanel::paint (juce::Graphics& g)
         const juce::Rectangle<float> playRect (wfArea.getX(), wfArea.getY(), wfArea.getWidth(),
                                                wfArea.getHeight() + strip.getHeight());
         const int st = juce::jlimit (0, sculpt::kNumTracks - 1, screen.selectedTrack);
-        drawPlayhead (g, playRect, screen.tapePosition[static_cast<size_t> (st)]);
+        float play01 = screen.tapePosition[static_cast<size_t> (st)];
+        if (materialPage)
+        {
+            const float v0   = screen.materialViewStart01;
+            const float v1   = screen.materialViewEnd01;
+            const float span = juce::jmax (1.0e-5f, v1 - v0);
+            play01             = (play01 - v0) / span;
+            play01             = juce::jlimit (0.0f, 1.0f, play01);
+        }
+        drawPlayhead (g, playRect, play01);
 
         area.removeFromTop (4);
         drawOneTrackMeter (g, area.removeFromTop (rowH), screen, st);

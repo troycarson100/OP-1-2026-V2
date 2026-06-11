@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include "../util/MathUtils.h"
 
@@ -66,6 +67,11 @@ enum class ParameterId : int
     MixCompThreshold,
     MixCompMakeup,
 
+    // Material LCD: horizontal zoom for waveform (0 = full buffer, 1 = max zoom).
+    MaterialWaveZoom,
+    // Material: manual tape playhead 0..1 (loop-clamped). Applied while stopped; zoom centers on this when not playing.
+    MaterialPlayhead,
+
     Count
 };
 
@@ -122,6 +128,8 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MixEqHighGain:   return 0.5f;   // 0 dB (bipolar center)
         case ParameterId::MixCompThreshold: return 0.82f; // light compression by default
         case ParameterId::MixCompMakeup:    return 0.0f;  // unity makeup until dialed in
+        case ParameterId::MaterialWaveZoom: return 0.0f;   // full waveform
+        case ParameterId::MaterialPlayhead: return 0.0f;   // start of material
         default:                           return 0.0f;
     }
 }
@@ -166,6 +174,13 @@ namespace map
 
     // Makeup gain after compression, 0 .. +14 dB.
     inline float mixCompMakeupDb (float n)   { return clamp01 (n) * 14.0f; }
+
+    // Material waveform: fraction of buffer width visible (1 = full, ~0.03 = max zoom).
+    inline float materialWaveVisibleFraction (float zoom01)
+    {
+        const float z = clamp01 (zoom01);
+        return std::max (0.03f, 1.0f - z * 0.97f);
+    }
 } // namespace map
 
 inline const char* parameterName (ParameterId id)
@@ -212,6 +227,8 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MixEqHighGain:   return "Mix Treble";
         case ParameterId::MixCompThreshold: return "Mix Comp Thr";
         case ParameterId::MixCompMakeup:   return "Mix Comp Gain";
+        case ParameterId::MaterialWaveZoom: return "Wave Zoom";
+        case ParameterId::MaterialPlayhead: return "Playhead";
         default:                           return "Unknown";
     }
 }
