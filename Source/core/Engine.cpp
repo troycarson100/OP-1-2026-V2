@@ -209,89 +209,23 @@ float Engine::warpEffectiveSpeedRatio (int trackIndex) const
 
 void Engine::maybeResyncWarpPlayheadsAfterVarispeedChange (double beatNow)
 {
+    // beatNow kept for API symmetry; we intentionally do not seek the tape head here.
+    // Previous implementation snapped playheads to beat/ref phase whenever warp varispeed
+    // moved by a tiny threshold, which caused zipper/clicks during continuous knob scroll.
+    // Speed ratio is already updated every block via Track::updateParameters → TapePlayer::setSpeedRatio;
+    // letting position advance continuously preserves audio continuity (phase vs host may drift slightly
+    // until the next explicit launch or stop/play).
+    (void) beatNow;
+
     constexpr float nanV = std::numeric_limits<float>::quiet_NaN();
-    const auto      prevSnap = warpSpeedForResyncCompare_;
 
-    const double hostBpm = clock_.getBpm();
-
-    std::array<float, kNumTracks> speedNow {};
     for (int t = 0; t < kNumTracks; ++t)
     {
         const auto ts = static_cast<size_t> (t);
         if (tracks_[ts].isPlaying() && trackIsWarpMode (t))
-            speedNow[ts] = warpEffectiveSpeedRatio (t);
+            warpSpeedForResyncCompare_[ts] = warpEffectiveSpeedRatio (t);
         else
-            speedNow[ts] = nanV;
-    }
-
-    for (int t = 0; t < kNumTracks; ++t)
-    {
-        const auto ts = static_cast<size_t> (t);
-        Track&     trk = tracks_[ts];
-
-        if (! trk.isPlaying() || ! trackIsWarpMode (t))
-        {
             warpSpeedForResyncCompare_[ts] = nanV;
-            continue;
-        }
-
-        const float sNow = speedNow[ts];
-        const float prev = prevSnap[ts];
-
-        const float mag       = std::max (1.0e-6f, std::fabs (sNow));
-        const float threshold = std::max (5.0e-4f, 0.002f * mag);
-
-        bool refSpeedChanged = false;
-        const int ref        = findReferenceWarpPlayingTrack (t);
-        if (ref >= 0)
-        {
-            const auto rs    = static_cast<size_t> (ref);
-            const float sRef = speedNow[rs];
-            const float pRef = prevSnap[rs];
-            if (! std::isnan (sRef) && ! std::isnan (pRef))
-            {
-                const float magR       = std::max (1.0e-6f, std::fabs (sRef));
-                const float thresholdR = std::max (5.0e-4f, 0.002f * magR);
-                refSpeedChanged        = std::fabs (sRef - pRef) > thresholdR;
-            }
-        }
-
-        const bool selfChanged
-            = (! std::isnan (prev)) && (std::fabs (sNow - prev) > threshold);
-
-        if (! selfChanged && ! refSpeedChanged)
-        {
-            warpSpeedForResyncCompare_[ts] = sNow;
-            continue;
-        }
-
-        float rootBpm = map::sampleRootBpm (params_.effective (t, ParameterId::SampleRootBpm));
-        if (rootBpm < 1.0e-3f)
-            rootBpm = 120.0f;
-        const double bpmForWarp = (hostBpm > 1.0 && hostBpm < 999.0) ? hostBpm : static_cast<double> (rootBpm);
-
-        const float loopS  = params_.effective (t, ParameterId::LoopStart);
-        const float loopE  = params_.effective (t, ParameterId::LoopEnd);
-        const int   frames = trk.getMaterial().getBuffer().getNumFrames();
-
-        float ph01;
-        if (ref >= 0)
-        {
-            const auto rs = static_cast<size_t> (ref);
-            ph01 = warpLaunchSync::materialPlayheadForRefPhase (
-                tracks_[rs].getTapePositionNormalized(),
-                params_.effective (ref, ParameterId::LoopStart),
-                params_.effective (ref, ParameterId::LoopEnd),
-                loopS, loopE);
-        }
-        else
-        {
-            ph01 = warpLaunchSync::materialPlayheadForBeatPhase (beatNow, frames, loopS, loopE, sampleRate_,
-                                                              sNow, bpmForWarp);
-        }
-
-        trk.getEngine().getTape().seekNormalized (ph01, frames, loopS, loopE);
-        warpSpeedForResyncCompare_[ts] = sNow;
     }
 }
 
