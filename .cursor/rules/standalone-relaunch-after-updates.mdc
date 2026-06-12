@@ -1,20 +1,36 @@
 ---
-description: Quit and relaunch SculptSampler Standalone after plugin code or build changes so the new binary loads
+description: After plugin code or build changes, kill and reopen SculptSampler Standalone (mandatory shell step)
 alwaysApply: true
 ---
 
-# Standalone: close and reopen after updates
+# Standalone: close and reopen after every plugin update
 
-macOS does not hot-reload the Standalone `.app`. After any change that affects the built binary (e.g. `Source/**`, `CMakeLists.txt`, JUCE wrapper), **treat a full app restart as required** for the user to hear and test the update.
+macOS does not hot-reload the Standalone `.app`. **Do not only remind the user** — when this rule applies, you **must** run the shell relaunch below so the new binary is actually loaded.
 
-## End of each agent turn that changed executable / plugin code
+## When this rule applies
 
-1. If a rebuild was run or is implied, note that in the summary.
-2. **Tell the user explicitly** to **fully quit** SculptSampler Standalone (Cmd+Q or Quit from the menu — not only closing the window if the process stays alive), then **reopen** the app from the current build output, for example:
-   - Debug: `build/SculptSampler_artefacts/Debug/Standalone/SculptSampler.app`
-   - Adjust `Debug` → `Release` when relevant.
-3. Do not assume the running instance reflects new code until they have quit and reopened.
+Apply at the **end of the same turn** if **any** of these happened:
 
-## Optional automation
+- You edited files under `Source/` (engine, audio, UI, tests that compile into the plugin), or `CMakeLists.txt`, or other targets that change the SculptSampler binary, **or**
+- You ran `cmake --build` (or equivalent) and the SculptSampler / Standalone build **succeeded**.
 
-Only if the user has asked for hands-off relaunch or it clearly fits their workflow: you may suggest `open` on that `.app` path **after** they quit, or document that they should quit first before `open` to avoid two instances. Avoid `killall` unless they requested it — it can discard unsaved plugin state.
+**Skip** this rule if the turn only changed docs, `.mdc` rules, images, or other files that do **not** require a rebuild to test audio.
+
+## Mandatory action (agent)
+
+From the **workspace root** of this repo, run **exactly** (one line; `killall` may exit 1 if the app was not running — that is OK):
+
+```bash
+killall SculptSampler 2>/dev/null; open "build/SculptSampler_artefacts/Debug/Standalone/SculptSampler.app"
+```
+
+- Use **Debug** path above unless this turn only built **Release** — then use `build/SculptSampler_artefacts/Release/Standalone/SculptSampler.app` instead.
+- After running it, **state in your reply** that Standalone was quit (if running) and reopened from that path.
+
+## Why `killall`
+
+`open` alone can focus an **already-running** old process. **`killall SculptSampler` first** guarantees the next `open` starts a fresh instance with the new build. Unsaved plugin state in Standalone may be lost — that is acceptable for dev iteration; if the user only uses AU/VST in a host, say so once and remind them to rescan/reload that format separately.
+
+## Summary line
+
+In the same turn as a qualifying change, your user-visible summary should include **both**: (1) what changed, and (2) that Standalone was relaunched via the command above.
