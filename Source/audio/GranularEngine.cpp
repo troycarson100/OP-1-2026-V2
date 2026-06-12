@@ -318,14 +318,14 @@ void GranularEngine::processSyncedBoundaries (const SampleBuffer& buffer, int nu
             continue;
         }
 
-        int sampleOffset = static_cast<int> (std::lround ((B - beat0) * spb));
-        sampleOffset     = std::clamp (sampleOffset, 0, std::max (0, numSamples - 1));
+        // Boundary time in samples (double) so ratchet bursts divide the period evenly;
+        // integer stride (divSamples / rat) truncates and drifts against triplets / host BPM.
+        const double beatRel    = B - beat0;
+        double       tHitSample = beatRel * spb;
 
         const float hum = map::grainSyncHumanizeMaxSamples (sampleRate_);
         const float humAmt = 0.18f + 0.82f * params_.texture;
-        const int   h      = static_cast<int> (std::lround (humAmt * rng_.nextBipolar () * hum));
-        sampleOffset += h;
-        sampleOffset = std::clamp (sampleOffset, 0, std::max (0, numSamples - 1));
+        tHitSample += static_cast<double> (humAmt * rng_.nextBipolar () * hum);
 
         const auto& st = grainPatternStep (activePatternIndex_, step16);
 
@@ -337,13 +337,16 @@ void GranularEngine::processSyncedBoundaries (const SampleBuffer& buffer, int nu
         if (params_.grainPatternAmount <= 1.0e-8f)
             rat = 1;
 
-        const int divSamples = std::max (1, static_cast<int> (std::lround (divBeats * spb)));
-        const int stride     = std::max (1, divSamples / static_cast<int> (rat));
+        const double divSamplesD = divBeats * spb;
+        const int    ratI        = static_cast<int> (rat);
 
         const float accent = 1.0f;
-        for (int k = 0; k < static_cast<int> (rat); ++k)
+        for (int k = 0; k < ratI; ++k)
         {
-            const int off = std::clamp (sampleOffset + k * stride, 0, std::max (0, numSamples - 1));
+            const double tk =
+                tHitSample + static_cast<double> (k) * divSamplesD / static_cast<double> (ratI);
+            int off = static_cast<int> (std::lround (tk));
+            off       = std::clamp (off, 0, std::max (0, numSamples - 1));
             spawnOneGrain (buffer, off, true, accent, stepIndex, st, params_.grainPatternAmount);
         }
 

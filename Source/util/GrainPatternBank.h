@@ -144,7 +144,9 @@ constexpr GrainPattern makeTripletGhost()
     for (int i = 0; i < 16; ++i)
     {
         const bool hit = (i % 3) == 0;
-        const uint8_t r = (i == 12 ? 3 : 1);
+        // Ratchet 1/2 only: triple-feel comes from the 3-cycle accent, not a 3-way split of the
+        // division (which misaligns to many beat grids when stride was integer-truncated).
+        const uint8_t r = (i == 12 ? 2 : 1);
         p.steps[static_cast<size_t> (i)] = S (0, 0, 1.0f, hit ? 0.0f : -5.0f, r);
     }
     return p;
@@ -180,7 +182,8 @@ constexpr GrainPattern makeMaxChaos()
     constexpr float pos[16] = { 0.28f,  -0.32f, 0.16f,  -0.2f,  0.34f,  -0.27f, 0.14f,  -0.3f,
                                 0.22f,  -0.18f, 0.25f,  -0.16f, 0.32f,  -0.28f, 0.12f,  -0.33f };
     constexpr int8_t sem[16] = { 7, -7, 5, -5, 12, -10, 4, -4, 9, -8, 10, -12, 3, -3, 7, -7 };
-    constexpr uint8_t rt[16] = { 2, 1, 3, 1, 3, 1, 2, 2, 1, 3, 1, 3, 1, 2, 1, 2 };
+    // Ratchets 1/2/4 only so sub-divisions always land on dyadic fractions of the sync period.
+    constexpr uint8_t rt[16] = { 2, 1, 2, 1, 2, 1, 2, 2, 1, 2, 1, 2, 1, 2, 1, 2 };
     GrainPattern      p {};
     for (int i = 0; i < 16; ++i)
         p.steps[static_cast<size_t> (i)] = S (pos[static_cast<size_t> (i)], sem[static_cast<size_t> (i)], 0.82f,
