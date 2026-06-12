@@ -390,7 +390,7 @@ namespace
                         const sculpt::ScreenModel& screen)
     {
         constexpr int kCols = 4;
-        // Hardware row: 8 encoders / LCD cells (Granular page 2 reuses the same 8 cells for sync params).
+        // Hardware row: 8 encoders / LCD cells (Granular page 2 reuses the same 8 cells for sync + patterns).
         constexpr int kLcdParamSlots = 8;
         const int     rows  = (kLcdParamSlots + kCols - 1) / kCols;
         const int     cellW = area.getWidth() / kCols;

@@ -7,7 +7,7 @@ namespace
 {
     constexpr ParameterId kEmpty = ParameterId::Count;
 
-    // Granular: two hardware pages of 8 encoders each (UI sub-page selector).
+    // Granular: two 8-encoder banks — core / sync + Euclidean + pitch quant + choreography.
     constexpr ParameterId kGranularEncoderPage[2][8] = {
         { ParameterId::GrainPosition, ParameterId::GrainSize, ParameterId::GrainDensity,
           ParameterId::GrainPitch, ParameterId::GrainSpray, ParameterId::GrainTexture,
@@ -79,8 +79,8 @@ ParameterId PageModel::parameterForSlot (Page page, int slot, int granularEncode
     {
         if (slot >= 8)
             return kEmpty;
-        const int g = (granularEncoderPage > 0) ? 1 : 0;
-        return kGranularEncoderPage[g][static_cast<size_t> (slot)];
+        const int g = std::clamp (granularEncoderPage, 0, 1);
+        return kGranularEncoderPage[static_cast<size_t> (g)][static_cast<size_t> (slot)];
     }
 
     return kPageParams[p][slot];

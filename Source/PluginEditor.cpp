@@ -92,8 +92,9 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     {
         auto& b = granularEncoderPageButtons_[static_cast<size_t> (g)];
         b.setButtonText (juce::String (g + 1));
-        b.setTooltip (g == 0 ? "Granular encoders: position, size, density, pitch, spray, texture, spread, mix."
-                              : "Granular encoders: sync, Euclidean steps / pulses / rotate, pitch quantize.");
+        b.setTooltip (g == 0 ? "Granular page 1: position, size, density, pitch, spray, texture, spread, mix."
+                              : "Granular page 2: sync, Euclidean steps / pulses / rotate, pitch quantize, "
+                                "grain pattern + pattern amount.");
         b.setColour (juce::TextButton::buttonOnColourId, kAccent);
         b.onClick = [this, g]
         {

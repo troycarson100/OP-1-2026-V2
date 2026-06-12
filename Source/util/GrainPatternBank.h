@@ -100,7 +100,7 @@ constexpr GrainPattern makeSparseBloom()
     for (int i = 0; i < 16; ++i)
     {
         const bool acc = (i == 0 || i == 5 || i == 10);
-        p.steps[static_cast<size_t> (i)] = S (0, 0, acc ? 2.0f : 1.0f, acc ? 3.0f : -12.0f, 1);
+        p.steps[static_cast<size_t> (i)] = S (0, 0, acc ? 1.85f : 1.0f, acc ? 2.0f : -6.0f, 1);
     }
     return p;
 }
@@ -145,7 +145,7 @@ constexpr GrainPattern makeTripletGhost()
     {
         const bool hit = (i % 3) == 0;
         const uint8_t r = (i == 12 ? 3 : 1);
-        p.steps[static_cast<size_t> (i)] = S (0, 0, 1.0f, hit ? 0.0f : -9.0f, r);
+        p.steps[static_cast<size_t> (i)] = S (0, 0, 1.0f, hit ? 0.0f : -5.0f, r);
     }
     return p;
 }
@@ -156,8 +156,8 @@ constexpr GrainPattern makeBounce()
     for (int i = 0; i < 16; ++i)
     {
         const int j = i % 4;
-        const float sz = 2.0f - (1.7f * static_cast<float> (j) / 3.0f);
-        const int8_t ps = static_cast<int8_t> (12 - 3 * j);
+        const float sz = 1.85f - (1.45f * static_cast<float> (j) / 3.0f);
+        const int8_t ps = static_cast<int8_t> (10 - 3 * j);
         p.steps[static_cast<size_t> (i)] = S (0, ps, sz, 0, 1);
     }
     return p;
@@ -166,8 +166,8 @@ constexpr GrainPattern makeBounce()
 constexpr GrainPattern makeDrunk()
 {
     // Fixed pseudo-random walk (deterministic).
-    constexpr float pos[16] = { 0.05f,  -0.11f, 0.08f,  0.22f,  -0.18f, 0.03f,  -0.07f, 0.14f,
-                                -0.21f, 0.09f,  -0.04f, 0.17f,  -0.13f, 0.06f,  -0.19f, 0.12f };
+    constexpr float pos[16] = { 0.04f,  -0.09f, 0.07f,  0.18f,  -0.15f, 0.025f, -0.06f, 0.11f,
+                                -0.17f, 0.075f, -0.035f, 0.14f,  -0.11f, 0.05f,  -0.16f, 0.10f };
     constexpr int8_t ps[16] = { 0, 2, -1, 0, -2, 1, 0, 2, -1, -2, 1, 0, 2, -1, 0, -2 };
     GrainPattern     p {};
     for (int i = 0; i < 16; ++i)
@@ -177,13 +177,14 @@ constexpr GrainPattern makeDrunk()
 
 constexpr GrainPattern makeMaxChaos()
 {
-    constexpr float pos[16] = { 0.35f,  -0.4f,  0.2f,   -0.25f, 0.42f,  -0.33f, 0.18f,  -0.38f,
-                                0.28f,  -0.22f, 0.31f,  -0.19f, 0.4f,   -0.35f, 0.15f,  -0.41f };
-    constexpr int8_t sem[16] = { 12, -12, 7, -7, 24, -19, 5, -5, 14, -11, 19, -24, 3, -3, 10, -10 };
-    constexpr uint8_t rt[16] = { 2, 1, 3, 1, 4, 1, 2, 2, 1, 3, 1, 4, 1, 2, 1, 3 };
+    constexpr float pos[16] = { 0.28f,  -0.32f, 0.16f,  -0.2f,  0.34f,  -0.27f, 0.14f,  -0.3f,
+                                0.22f,  -0.18f, 0.25f,  -0.16f, 0.32f,  -0.28f, 0.12f,  -0.33f };
+    constexpr int8_t sem[16] = { 7, -7, 5, -5, 12, -10, 4, -4, 9, -8, 10, -12, 3, -3, 7, -7 };
+    constexpr uint8_t rt[16] = { 2, 1, 3, 1, 3, 1, 2, 2, 1, 3, 1, 3, 1, 2, 1, 2 };
     GrainPattern      p {};
     for (int i = 0; i < 16; ++i)
-        p.steps[static_cast<size_t> (i)] = S (pos[static_cast<size_t> (i)], sem[static_cast<size_t> (i)], 0.75f, (i & 1) ? 2.0f : -3.0f, rt[static_cast<size_t> (i)]);
+        p.steps[static_cast<size_t> (i)] = S (pos[static_cast<size_t> (i)], sem[static_cast<size_t> (i)], 0.82f,
+                                            (i & 1) ? 1.2f : -2.0f, rt[static_cast<size_t> (i)]);
     return p;
 }
 

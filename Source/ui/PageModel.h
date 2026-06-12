@@ -29,7 +29,7 @@ public:
 
     // Returns the ParameterId for an encoder slot on a page, or
     // ParameterId::Count when the slot is empty.
-    // Granular uses two 8-encoder sub-pages: `granularEncoderPage` 0 = core grains, 1 = sync/Euclidean/pitch quant.
+    // Granular uses two 8-encoder sub-pages: 0 = core grains, 1 = sync/Euclidean/pitch quant + patterns.
     static ParameterId parameterForSlot (Page page, int slot, int granularEncoderPage = 0);
 
     static int parameterCount (Page page, int granularEncoderPage = 0);

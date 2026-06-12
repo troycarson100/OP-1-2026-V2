@@ -370,16 +370,16 @@ void Engine::setSelectedPage (Page page)
     }
 }
 
-void Engine::setGranularEncoderPage (int page01)
+void Engine::setGranularEncoderPage (int pageIndex)
 {
-    const int p = (page01 > 0) ? 1 : 0;
+    const int p = std::clamp (pageIndex, 0, 1);
     granularEncoderPage_.store (p, std::memory_order_relaxed);
     screen_.granularEncoderPage = static_cast<uint8_t> (p);
 }
 
 int Engine::getGranularEncoderPage() const
 {
-    return granularEncoderPage_.load (std::memory_order_relaxed);
+    return std::clamp (granularEncoderPage_.load (std::memory_order_relaxed), 0, 1);
 }
 
 void Engine::setModPatch (const ModPatch& patch)

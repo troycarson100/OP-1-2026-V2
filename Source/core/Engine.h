@@ -66,8 +66,8 @@ public:
     Page getSelectedPage() const          { return selectedPage_; }
     int  getSelectedTrack() const;
 
-    // Granular LCD + hardware editor: two 8-slot encoder pages (0 = core, 1 = sync/Euclidean/pitch quant).
-    void setGranularEncoderPage (int page01);
+    // Granular LCD + hardware editor: two 8-slot encoder pages (0 = core, 1 = sync/Euclidean/quant + patterns).
+    void setGranularEncoderPage (int pageIndex);
     int  getGranularEncoderPage() const;
 
     void        setModPatch (const ModPatch& patch);

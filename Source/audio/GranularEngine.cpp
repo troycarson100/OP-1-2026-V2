@@ -79,7 +79,7 @@ void GranularEngine::maybeLatchPattern (int64_t patternGridIndex)
 
 void GranularEngine::updatePatternLedSnapshot()
 {
-    const float amt = clamp01 (params_.grainPatternAmount);
+    const float amt = map::grainPatternDepth01 (params_.grainPatternAmount);
     for (int s = 0; s < 16; ++s)
     {
         const auto& st = grainPatternStep (activePatternIndex_, s);
@@ -104,7 +104,7 @@ void GranularEngine::spawnOneGrain (const SampleBuffer& buffer, int startOffsetI
     if (voice == nullptr)
         return;
 
-    const float amt = clamp01 (patternAmount01);
+    const float amt = map::grainPatternDepth01 (patternAmount01);
 
     float   posOff   = 0.0f;
     int     pitchAdd = 0;
@@ -166,7 +166,7 @@ void GranularEngine::spawnOneGrain (const SampleBuffer& buffer, int startOffsetI
     }
 
     float semis = (params_.pitch - 0.5f) * 12.0f + static_cast<float> (pitchAdd);
-    if (params_.syncedMode && params_.pitchQuantIndex > 0)
+    if (params_.pitchQuantIndex > 0)
         semis = quantizeGrainPitchSemitones (semis, params_.pitchQuantIndex);
 
     float increment = semitonesToRatio (semis)
@@ -322,8 +322,8 @@ void GranularEngine::processSyncedBoundaries (const SampleBuffer& buffer, int nu
         sampleOffset     = std::clamp (sampleOffset, 0, std::max (0, numSamples - 1));
 
         const float hum = map::grainSyncHumanizeMaxSamples (sampleRate_);
-        const int   h   = static_cast<int> (std::lround (
-            static_cast<float> (params_.texture) * rng_.nextBipolar () * hum));
+        const float humAmt = 0.18f + 0.82f * params_.texture;
+        const int   h      = static_cast<int> (std::lround (humAmt * rng_.nextBipolar () * hum));
         sampleOffset += h;
         sampleOffset = std::clamp (sampleOffset, 0, std::max (0, numSamples - 1));
 

@@ -58,7 +58,7 @@ struct ScreenModel
     int currentScene  = 0;
     Page selectedPage = Page::Granular;
 
-    // Granular: which 8-slot encoder bank the LCD mirrors (0 = core grains, 1 = sync / Euclidean / pitch Q).
+    // Granular: which 8-slot encoder bank the LCD mirrors (0 = core, 1 = sync/Euclidean/quant + patterns).
     uint8_t granularEncoderPage = 0;
 
     std::array<bool,  kNumTracks> trackPlaying {};

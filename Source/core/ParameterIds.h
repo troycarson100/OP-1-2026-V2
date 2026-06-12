@@ -124,8 +124,8 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::GrainSize:       return 0.40f;
         case ParameterId::GrainDensity:    return 0.45f;
         case ParameterId::GrainPitch:      return 0.5f;   // -> ratio 1.0
-        case ParameterId::GrainSpray:      return 0.20f;
-        case ParameterId::GrainTexture:    return 0.20f;
+        case ParameterId::GrainSpray:      return 0.16f;
+        case ParameterId::GrainTexture:    return 0.16f;
         case ParameterId::GrainSpread:     return 0.50f;
         case ParameterId::GrainMix:        return 0.50f;
         case ParameterId::GrainSync:       return 0.0f;   // Free
@@ -275,6 +275,12 @@ namespace map
     inline float grainPatternGainDbEffective (float gainDbStep, float amount01)
     {
         return gainDbStep * clamp01 (amount01);
+    }
+
+    // Eased 0..1 depth for pattern choreography: more musical motion in the first half of the knob.
+    inline float grainPatternDepth01 (float n01)
+    {
+        return std::sqrt (clamp01 (n01));
     }
 
     inline float filterCutoffHz (float n)    { return 40.0f * std::pow (2.0f, n * 8.3f); }        // ~40Hz .. ~12.6kHz
