@@ -1,9 +1,13 @@
 #include <cmath>
 #include <algorithm>
+#include <cstdint>
+
 #include "GranularEngine.h"
 #include "SampleBuffer.h"
 #include "../core/ParameterIds.h"
 #include "../util/Constants.h"
+#include "../util/Euclidean.h"
+#include "../util/GrainPitchScales.h"
 #include "../util/MathUtils.h"
 
 namespace sculpt
@@ -18,33 +22,88 @@ void GranularEngine::prepare (double sampleRate)
 void GranularEngine::reset()
 {
     pool_.reset();
-    samplesUntilNext_ = 0.0;
+    samplesUntilNext_           = 0.0;
+    lastFiredBoundaryBeat_      = -1.0e30;
+    lastDivBeats_               = -1.0;
+    prevSyncedScheduler_        = false;
+    cachedEuclidMask_           = 0;
+    cachedEuclidSteps_          = -1;
+    cachedEuclidPulses_         = -1;
+    cachedEuclidRotate_         = -1;
+    patternSyncOn_              = false;
+    patternDivisionIndex_       = 0;
+    patternSteps_               = 8;
+    patternPulses_              = 4;
+    patternRotate_              = 0;
+    patternCurrentStep_         = 0;
+    patternMask_                = 0;
 }
 
-double GranularEngine::nextSpawnInterval()
+void GranularEngine::updateEuclideanMask()
+{
+    const int s = std::clamp (params_.steps, 1, 16);
+    const int p = std::clamp (params_.pulses, 1, s);
+    const int r = std::clamp (params_.rotate, 0, std::max (1, s) - 1);
+    if (s != cachedEuclidSteps_ || p != cachedEuclidPulses_ || r != cachedEuclidRotate_)
+    {
+        cachedEuclidSteps_  = s;
+        cachedEuclidPulses_ = p;
+        cachedEuclidRotate_ = r;
+        cachedEuclidMask_   = euclideanRhythm (s, p, r);
+    }
+}
+
+double GranularEngine::nextSpawnIntervalFree()
 {
     const double densityHz = static_cast<double> (map::grainDensityHz (params_.density));
-    double interval = sampleRate_ / densityHz;
-
-    // Texture adds timing jitter to the spawn clock.
+    double       interval  = sampleRate_ / densityHz;
     interval *= 1.0 + static_cast<double> (params_.texture) * 0.75 * static_cast<double> (rng_.nextBipolar());
     return interval > 10.0 ? interval : 10.0;
 }
 
-void GranularEngine::spawnGrain (const SampleBuffer& buffer)
+void GranularEngine::spawnGrainFree (const SampleBuffer& buffer)
+{
+    spawnGrainAt (buffer, 0, false, 1.0f, -1);
+}
+
+void GranularEngine::spawnGrainAt (const SampleBuffer& buffer, int startOffsetInBlock, bool syncedOverlap,
+                                   float accentMul, int stepIndexForAccent)
 {
     GrainVoice* voice = pool_.findFreeVoice();
     if (voice == nullptr)
-        return;   // Pool exhausted - skip this grain, never allocate.
+        return;
 
-    const float frames = static_cast<float> (buffer.getNumFrames());
+    const float frames = static_cast<float> (buffer.getNumFrames ());
 
-    const float sizeSeconds = map::grainSizeSeconds (params_.size);
+    const float sizeSeconds   = map::grainSizeSeconds (params_.size);
     const int   lengthSamples = static_cast<int> (sizeSeconds * static_cast<float> (sampleRate_));
 
-    // Position with spray randomness; wrap into valid buffer range.
-    float startFrame = params_.position * (frames - 1.0f)
-                     + params_.spray * 0.5f * frames * rng_.nextBipolar();
+    const float loopA = clamp01 (params_.loopStart01);
+    const float loopB = clamp01 (params_.loopEnd01);
+    const float ls    = loopA * (frames - 1.0f);
+    const float le    = loopB * (frames - 1.0f);
+    const float loopLenFrames = std::max (1.0f, le - ls);
+
+    float startFrame = 0.0f;
+
+    if (params_.syncedMode)
+    {
+        const float base = ls + clamp01 (params_.position) * loopLenFrames;
+        if (params_.spray <= 1.0e-5f)
+            startFrame = base;
+        else
+        {
+            const int steps = std::clamp (params_.steps, 1, 16);
+            const int si    = static_cast<int> (rng_.nextUInt () % static_cast<uint32_t> (steps));
+            startFrame      = ls + (static_cast<float> (si) + 0.5f) / static_cast<float> (steps) * loopLenFrames;
+        }
+    }
+    else
+    {
+        startFrame = params_.position * (frames - 1.0f)
+                     + params_.spray * 0.5f * frames * rng_.nextBipolar ();
+    }
+
     if (frames > 0.0f)
     {
         startFrame = std::fmod (startFrame, frames);
@@ -52,51 +111,165 @@ void GranularEngine::spawnGrain (const SampleBuffer& buffer)
             startFrame += frames;
     }
 
-    // Pitch with per-grain texture detune (gentler than before).
-    float increment = map::grainPitchRatio (params_.pitch)
-                    * (1.0f + params_.texture * 0.04f * rng_.nextBipolar());
+    float semis = (params_.pitch - 0.5f) * 12.0f;
+    if (params_.syncedMode && params_.pitchQuantIndex > 0)
+        semis = quantizeGrainPitchSemitones (semis, params_.pitchQuantIndex);
 
-    // Stereo spread via per-grain equal-power pan.
+    float increment = semitonesToRatio (semis)
+                      * (1.0f + params_.texture * 0.04f * rng_.nextBipolar ());
+
     float gainL = 0.0f, gainR = 0.0f;
-    equalPowerPan (params_.spread * rng_.nextBipolar(), gainL, gainR);
+    equalPowerPan (params_.spread * rng_.nextBipolar (), gainL, gainR);
 
-    // Level vs overlap: many grains overlapping raises peak/RMS. We still want
-    // turning density or size up to feel fuller (more grains / longer bodies),
-    // so do not assume the full "ideal" overlap when the fixed pool caps how
-    // many grains can actually sound at once.
-    const float overlapIdeal = map::grainDensityHz (params_.density) * sizeSeconds;
+    float overlapIdeal = 0.0f;
+    if (syncedOverlap)
+    {
+        const double divBeats = map::grainRateDivisionBeats (params_.density);
+        const double bpm        = timing_.bpm > 1.0e-6 ? timing_.bpm : 120.0;
+        const double divSec   = divBeats * (60.0 / bpm);
+        if (divSec > 1.0e-9)
+            overlapIdeal = static_cast<float> (sizeSeconds / divSec);
+    }
+    else
+        overlapIdeal = map::grainDensityHz (params_.density) * sizeSeconds;
+
     const float overlapForGain = std::min (overlapIdeal, static_cast<float> (kGrainsPerTrack));
-    // Gentler than 1/sqrt(overlap): strict sqrt made dense clouds feel too quiet.
     constexpr float kOverlapCompExponent = 0.36f;
     constexpr float kGrainLaunchGain     = 1.0f;
-    const float denom = std::pow (std::max (1.0f, overlapForGain), kOverlapCompExponent);
-    const float amp   = kGrainLaunchGain / denom;
+    const float     denom                = std::pow (std::max (1.0f, overlapForGain), kOverlapCompExponent);
+    float           amp                  = kGrainLaunchGain / denom;
+
+    int firstPulseStep = -1;
+    if (params_.syncedMode)
+    {
+        const int steps = std::clamp (params_.steps, 1, 16);
+        for (int i = 0; i < steps; ++i)
+        {
+            if ((cachedEuclidMask_ >> i) & 1)
+            {
+                firstPulseStep = i;
+                break;
+            }
+        }
+        if (firstPulseStep >= 0 && stepIndexForAccent == firstPulseStep)
+            amp *= dbToGain (2.0f);
+    }
+
+    amp *= accentMul;
 
     GrainVoice::StartParams sp;
-    sp.startFrame    = startFrame;
-    sp.increment     = increment;
-    sp.lengthSamples = lengthSamples;
-    sp.gainL         = gainL * amp;
-    sp.gainR         = gainR * amp;
+    sp.startFrame           = startFrame;
+    sp.increment            = increment;
+    sp.lengthSamples        = lengthSamples;
+    sp.gainL                = gainL * amp;
+    sp.gainR                = gainR * amp;
+    sp.startOffsetSamples   = std::max (0, startOffsetInBlock);
     voice->start (sp);
+}
+
+void GranularEngine::processSyncedBoundaries (const SampleBuffer& buffer, int numSamples)
+{
+    const double divBeats = map::grainRateDivisionBeats (params_.density);
+    const double spb      = timing_.samplesPerBeat;
+    const double beat0    = timing_.beatAtBlockStart;
+
+    if (divBeats <= 1.0e-12 || spb <= 1.0e-12 || ! std::isfinite (divBeats) || ! std::isfinite (spb))
+        return;
+
+    if (params_.syncedMode != prevSyncedScheduler_
+        || std::fabs (divBeats - lastDivBeats_) > 1.0e-9)
+        lastFiredBoundaryBeat_ = -1.0e30;
+    lastDivBeats_ = divBeats;
+
+    const double beat1 = beat0 + static_cast<double> (numSamples) / spb;
+
+    const int steps = std::clamp (params_.steps, 1, 16);
+    updateEuclideanMask ();
+
+    const int64_t nMin = static_cast<int64_t> (std::ceil (beat0 / divBeats - 1.0e-12));
+    const int64_t nMax = static_cast<int64_t> (std::floor (beat1 / divBeats + 1.0e-12));
+
+    for (int64_t n = nMin; n <= nMax; ++n)
+    {
+        const double B = static_cast<double> (n) * divBeats;
+        if (B <= lastFiredBoundaryBeat_ + 1.0e-9)
+            continue;
+        if (B < beat0 - 1.0e-9 || B > beat1 + 1.0e-9)
+            continue;
+
+        int stepIndex = 0;
+        if (steps > 0)
+        {
+            const int64_t si = static_cast<int64_t> (std::floor (B / divBeats + 1.0e-12));
+            stepIndex      = static_cast<int> (((si % steps) + steps) % steps);
+        }
+
+        patternCurrentStep_ = stepIndex;
+
+        if (((cachedEuclidMask_ >> stepIndex) & 1) == 0)
+        {
+            lastFiredBoundaryBeat_ = B;
+            continue;
+        }
+
+        int sampleOffset = static_cast<int> (std::lround ((B - beat0) * spb));
+        sampleOffset     = std::clamp (sampleOffset, 0, std::max (0, numSamples - 1));
+
+        const float hum = map::grainSyncHumanizeMaxSamples (sampleRate_);
+        const int   h   = static_cast<int> (std::lround (
+            static_cast<float> (params_.texture) * rng_.nextBipolar () * hum));
+        sampleOffset += h;
+        sampleOffset = std::clamp (sampleOffset, 0, std::max (0, numSamples - 1));
+
+        const float accent = 1.0f;
+        spawnGrainAt (buffer, sampleOffset, true, accent, stepIndex);
+        lastFiredBoundaryBeat_ = B;
+    }
+
+    if (steps > 0)
+    {
+        const int64_t siEnd = static_cast<int64_t> (std::floor (beat1 / divBeats + 1.0e-12));
+        patternCurrentStep_ = static_cast<int> (((siEnd % steps) + steps) % steps);
+    }
 }
 
 void GranularEngine::process (const SampleBuffer& buffer, float* outL, float* outR, int numSamples)
 {
-    if (buffer.getNumFrames() < 2)
+    if (buffer.getNumFrames () < 2)
+    {
+        prevSyncedScheduler_ = params_.syncedMode;
         return;
+    }
+
+    updateEuclideanMask ();
+
+    patternSyncOn_        = params_.syncedMode;
+    patternDivisionIndex_ = map::grainRateDivisionTableIndex (params_.density);
+    patternSteps_         = std::clamp (params_.steps, 1, 16);
+    patternPulses_        = std::clamp (params_.pulses, 1, patternSteps_);
+    patternRotate_        = std::clamp (params_.rotate, 0, std::max (1, patternSteps_) - 1);
+    patternMask_          = cachedEuclidMask_;
 
     if (spawning_)
     {
-        samplesUntilNext_ -= static_cast<double> (numSamples);
-        while (samplesUntilNext_ <= 0.0)
+        if (params_.syncedMode)
+            processSyncedBoundaries (buffer, numSamples);
+        else
         {
-            spawnGrain (buffer);
-            samplesUntilNext_ += nextSpawnInterval();
+            if (prevSyncedScheduler_ && ! params_.syncedMode)
+                samplesUntilNext_ = 0.0;
+            samplesUntilNext_ -= static_cast<double> (numSamples);
+            while (samplesUntilNext_ <= 0.0)
+            {
+                spawnGrainFree (buffer);
+                samplesUntilNext_ += nextSpawnIntervalFree ();
+            }
         }
     }
 
     pool_.renderAll (buffer, outL, outR, numSamples);
+
+    prevSyncedScheduler_ = params_.syncedMode;
 }
 
 void GranularEngine::fillGrainDisplay (const SampleBuffer& material, GrainDisplaySlot* out, int maxSlots) const
@@ -104,7 +277,7 @@ void GranularEngine::fillGrainDisplay (const SampleBuffer& material, GrainDispla
     if (out == nullptr || maxSlots <= 0)
         return;
 
-    const float tf = static_cast<float> (std::max (1, material.getNumFrames()));
+    const float tf = static_cast<float> (std::max (1, material.getNumFrames ()));
     pool_.fillGrainDisplay (tf, out, maxSlots);
 }
 
@@ -117,7 +290,7 @@ void GranularEngine::getGrainFocusWindow01 (float totalFrames, float& outStart01
         return;
     }
 
-    const float tf        = totalFrames;
+    const float tf         = totalFrames;
     const float startFrame = params_.position * (tf - 1.0f);
     const float sizeSec    = map::grainSizeSeconds (params_.size);
     const float lenFrames  = sizeSec * static_cast<float> (sampleRate_);

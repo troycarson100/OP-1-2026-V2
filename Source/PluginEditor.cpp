@@ -88,6 +88,23 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
         addAndMakeVisible (b);
     }
 
+    for (int g = 0; g < 2; ++g)
+    {
+        auto& b = granularEncoderPageButtons_[static_cast<size_t> (g)];
+        b.setButtonText (juce::String (g + 1));
+        b.setTooltip (g == 0 ? "Granular encoders: position, size, density, pitch, spray, texture, spread, mix."
+                              : "Granular encoders: sync, Euclidean steps / pulses / rotate, pitch quantize.");
+        b.setColour (juce::TextButton::buttonOnColourId, kAccent);
+        b.onClick = [this, g]
+        {
+            processor_.getEngine().setGranularEncoderPage (g);
+            rebuildPageControls();
+            resized();
+        };
+        b.setVisible (false);
+        addAndMakeVisible (b);
+    }
+
     auto& apvts = processor_.getValueTreeState();
 
     for (int m = 0; m < sculpt::kNumMacros; ++m)
@@ -151,6 +168,8 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     modPageViewport_.setVisible (false);
 
     rebuildPageControls();
+    for (auto& b : granularEncoderPageButtons_)
+        b.setVisible (currentPage_ == sculpt::Page::Granular);
     instrumentPanel_.setUiPage (currentPage_);
     // 60 Hz: LCD (mod hints, Mod oscilloscope, meters) tracks audio-thread ScreenModel with less lag than 30 Hz.
     startTimerHz (60);
@@ -180,6 +199,8 @@ void SculptSamplerAudioProcessorEditor::selectPage (sculpt::Page page)
     currentPage_ = page;
     processor_.getEngine().setSelectedPage (page);
     instrumentPanel_.setUiPage (currentPage_);
+    for (auto& b : granularEncoderPageButtons_)
+        b.setVisible (currentPage_ == sculpt::Page::Granular);
     rebuildPageControls();
     resized();
 }
@@ -199,9 +220,13 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
         return;
     }
 
+    const int granularEncPage = (currentPage_ == sculpt::Page::Granular)
+                                    ? processor_.getEngine().getGranularEncoderPage()
+                                    : 0;
+
     for (int slot = 0; slot < sculpt::kMaxParamsPerPage; ++slot)
     {
-        const auto id = sculpt::PageModel::parameterForSlot (currentPage_, slot);
+        const auto id = sculpt::PageModel::parameterForSlot (currentPage_, slot, granularEncPage);
         if (id == sculpt::ParameterId::Count)
             break;
 
@@ -267,6 +292,11 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
     for (int pg = 0; pg < static_cast<int> (sculpt::Page::Count); ++pg)
         pageButtons_[static_cast<size_t> (pg)].setToggleState (
             static_cast<sculpt::Page> (pg) == currentPage_, juce::dontSendNotification);
+
+    const int gEnc = processor_.getEngine().getGranularEncoderPage();
+    for (int g = 0; g < 2; ++g)
+        granularEncoderPageButtons_[static_cast<size_t> (g)].setToggleState (
+            g == gEnc, juce::dontSendNotification);
 
     auto& engine = processor_.getEngine();
     if (screen.selectedPage == sculpt::Page::Material
@@ -364,9 +394,19 @@ void SculptSamplerAudioProcessorEditor::resized()
 
     modPageViewport_.setVisible (false);
 
+    if (currentPage_ == sculpt::Page::Granular)
+    {
+        auto strip = knobArea.removeFromTop (22);
+        const int btnW = juce::jmin (36, strip.getWidth() / 8);
+        auto right = strip.removeFromRight (btnW * 2 + 8);
+        granularEncoderPageButtons_[1].setBounds (right.removeFromRight (btnW).reduced (1, 3));
+        granularEncoderPageButtons_[0].setBounds (right.removeFromRight (btnW).reduced (1, 3));
+    }
+
     const int columns = 4;
     const int cellWidth = knobArea.getWidth() / columns;
-    const int cellHeight = juce::jmax (72, knobArea.getHeight() / 2);
+    const int numRows = juce::jmax (1, (static_cast<int> (pageControls_.size()) + columns - 1) / columns);
+    const int cellHeight = juce::jmax (72, knobArea.getHeight() / numRows);
     for (size_t i = 0; i < pageControls_.size(); ++i)
     {
         const int col = static_cast<int> (i) % columns;

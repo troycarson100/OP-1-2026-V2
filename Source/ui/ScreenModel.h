@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 #include "PageModel.h"
 #include "../core/GrainDisplaySlot.h"
 #include "../core/ParameterIds.h"
@@ -8,6 +9,18 @@
 
 namespace sculpt
 {
+
+// Selected-track Euclidean / sync state for Granular LCD (filled in Engine::updateScreenModel).
+struct GranularPatternSnapshot
+{
+    bool     syncOn        = false;
+    int      divisionIndex = 0;
+    int      steps         = 8;
+    int      pulses        = 4;
+    int      rotate        = 0;
+    int      currentStep   = 0;
+    uint16_t mask          = 0;
+};
 
 // Mod page LCD: one-cycle preview + depth layer + scanner (audio thread writes).
 struct ModLcdSnapshot
@@ -34,6 +47,9 @@ struct ScreenModel
     int selectedTrack = 0;
     int currentScene  = 0;
     Page selectedPage = Page::Granular;
+
+    // Granular: which 8-slot encoder bank the LCD mirrors (0 = core grains, 1 = sync / Euclidean / pitch Q).
+    uint8_t granularEncoderPage = 0;
 
     std::array<bool,  kNumTracks> trackPlaying {};
     std::array<bool,  kNumTracks> trackRecording {};
@@ -82,6 +98,8 @@ struct ScreenModel
     // Knob-aligned grain window (no spray); LCD draws this for snappy feedback vs active grains.
     float grainFocusStart01 = 0.0f;
     float grainFocusLen01   = 0.0f;
+
+    GranularPatternSnapshot granularPattern {};
 
     // Mod page: oscilloscope-style source preview (see ModLcdSnapshot).
     ModLcdSnapshot modLcd {};

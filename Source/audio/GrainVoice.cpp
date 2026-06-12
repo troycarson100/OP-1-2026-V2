@@ -16,6 +16,7 @@ void GrainVoice::start (const StartParams& params)
     gainR_     = params.gainR;
     age_       = 0;
     active_    = true;
+    startOffsetRemaining_ = params.startOffsetSamples > 0 ? params.startOffsetSamples : 0;
 
     originStartFrame_ = params.startFrame;
     originLength_     = length_;
@@ -24,6 +25,8 @@ void GrainVoice::start (const StartParams& params)
 float GrainVoice::phase01() const
 {
     if (length_ <= 0)
+        return 0.0f;
+    if (startOffsetRemaining_ > 0)
         return 0.0f;
     return std::clamp (static_cast<float> (age_) / static_cast<float> (length_), 0.0f, 1.0f);
 }
@@ -39,6 +42,12 @@ void GrainVoice::render (const SampleBuffer& buffer, float* outL, float* outR, i
 
     for (int i = 0; i < numSamples; ++i)
     {
+        if (startOffsetRemaining_ > 0)
+        {
+            --startOffsetRemaining_;
+            continue;
+        }
+
         if (age_ >= length_)
         {
             active_ = false;

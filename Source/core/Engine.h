@@ -66,6 +66,10 @@ public:
     Page getSelectedPage() const          { return selectedPage_; }
     int  getSelectedTrack() const;
 
+    // Granular LCD + hardware editor: two 8-slot encoder pages (0 = core, 1 = sync/Euclidean/pitch quant).
+    void setGranularEncoderPage (int page01);
+    int  getGranularEncoderPage() const;
+
     void        setModPatch (const ModPatch& patch);
     const ModPatch& getModPatch() const;
     void        triggerModAdsr (int trackIndex, int slotIndex);
@@ -148,6 +152,7 @@ private:
     bool   prepared_   = false;
 
     std::atomic<int> modLcdSlot_ { 0 };
+    std::atomic<int> granularEncoderPage_ { 0 };
 };
 
 } // namespace sculpt

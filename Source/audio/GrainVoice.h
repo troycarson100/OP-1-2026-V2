@@ -17,6 +17,7 @@ public:
         int   lengthSamples = 0;
         float gainL        = 0.5f;
         float gainR        = 0.5f;
+        int   startOffsetSamples = 0; // silence at start of render (synced sample-accurate spawn)
     };
 
     void start (const StartParams& params);
@@ -39,6 +40,7 @@ private:
     float gainL_     = 0.0f;
     float gainR_     = 0.0f;
     bool  active_    = false;
+    int   startOffsetRemaining_ = 0;
 
     float originStartFrame_ = 0.0f;
     int   originLength_     = 0;

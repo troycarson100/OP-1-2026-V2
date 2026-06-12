@@ -4,14 +4,14 @@
 #include "../PageModel.h"
 #include "../../core/FilterScales.h"
 #include "../../core/ParameterIds.h"
+#include "../../util/GrainPitchScales.h"
 
 namespace
 {
     using namespace sculpt_editor;
 
-    // Fixed height reserved at the bottom of the LCD for the 2x4 VALUE readout grid.
-    // Two rows, each with a name label and a numeric value line.
-    constexpr int kValueGridH = 90;
+    // Fixed height reserved at the bottom of the LCD for the 4x4 VALUE readout grid.
+    constexpr int kValueGridH = 168;
     // Waveform height: fraction of what remains above the reserved value grid.
     constexpr float kWaveformFraction = 0.45f;
 
@@ -346,6 +346,33 @@ namespace
                 return (v > 0.5f) ? "Warp" : "Tape";
             case P::SampleRootBpm:
                 return juce::String (sculpt::map::sampleRootBpm (v), 1);
+            case P::GrainSync:
+                return (v > 0.5f) ? "Sync" : "Free";
+            case P::GrainDensity:
+            {
+                if (screen.granularPattern.syncOn)
+                    return "d" + juce::String (screen.granularPattern.divisionIndex);
+                return juce::String (sculpt::map::grainDensityHz (v), 1) + " Hz";
+            }
+            case P::GrainSteps:
+                return juce::String (sculpt::map::grainSteps (v));
+            case P::GrainPulses:
+                return juce::String (sculpt::map::grainPulses (v, screen.granularPattern.steps));
+            case P::GrainRotate:
+                return juce::String (sculpt::map::grainRotate (v, screen.granularPattern.steps));
+            case P::GrainPitchQuant:
+            {
+                const int q = sculpt::grainPitchQuantScaleIndex (v);
+                switch (q)
+                {
+                    case 0: return "Off";
+                    case 1: return "5th/Oct";
+                    case 2: return "MajPent";
+                    case 3: return "MinPent";
+                    case 4: return "Chrm";
+                    default: return "?";
+                }
+            }
             default:
                 return juce::String (v, 3);
         }
@@ -354,14 +381,18 @@ namespace
     void drawValueGrid (juce::Graphics& g, juce::Rectangle<int> area,
                         const sculpt::ScreenModel& screen)
     {
-        const int cellW = area.getWidth() / 4;
-        const int cellH = area.getHeight() / 2;
+        constexpr int kCols = 4;
+        // Hardware row: 8 encoders / LCD cells (Granular page 2 reuses the same 8 cells for sync params).
+        constexpr int kLcdParamSlots = 8;
+        const int     rows  = (kLcdParamSlots + kCols - 1) / kCols;
+        const int     cellW = area.getWidth() / kCols;
+        const int     cellH = rows > 0 ? area.getHeight() / rows : area.getHeight();
         constexpr float kModDead = 1.0e-5f;
 
-        for (int slot = 0; slot < 8; ++slot)
+        for (int slot = 0; slot < kLcdParamSlots; ++slot)
         {
-            const int col = slot % 4;
-            const int row = slot / 4;
+            const int col = slot % kCols;
+            const int row = slot / kCols;
             const juce::Rectangle<int> fullCell = juce::Rectangle<int> (area.getX() + col * cellW,
                                                                          area.getY() + row * cellH,
                                                                          cellW, cellH)

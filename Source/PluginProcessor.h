@@ -46,6 +46,11 @@ namespace bridge
             case P::GrainTexture:    suffix = "grainTexture"; break;
             case P::GrainSpread:     suffix = "grainSpread"; break;
             case P::GrainMix:        suffix = "grainMix"; break;
+            case P::GrainSync:       suffix = "grainSync"; break;
+            case P::GrainSteps:      suffix = "grainSteps"; break;
+            case P::GrainPulses:     suffix = "grainPulses"; break;
+            case P::GrainRotate:     suffix = "grainRotate"; break;
+            case P::GrainPitchQuant: suffix = "grainPitchQuant"; break;
             case P::FilterCutoff:    suffix = "filterCutoff"; break;
             case P::FilterResonance: suffix = "filterResonance"; break;
             case P::FilterMix:       suffix = "filterMix"; break;

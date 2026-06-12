@@ -1,8 +1,9 @@
 #include "Track.h"
+#include "GranularEngine.h"
 #include "../core/ParameterIds.h"
 #include "../core/ParameterState.h"
 #include "../core/FilterScales.h"
-#include "../util/Constants.h"
+#include "../util/GrainPitchScales.h"
 
 #include <algorithm>
 #include <cmath>
@@ -93,7 +94,7 @@ void Track::replaceMaterialStereo (const float* left, const float* right, int nu
 }
 
 void Track::updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub,
-                              double hostBpm)
+                              double hostBpm, const GranularBlockTiming& granularTiming)
 {
     const int t = trackIndex;
     auto get = [&state, t] (ParameterId id) { return state.effective (t, id); };
@@ -158,7 +159,15 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     gp.texture  = get (ParameterId::GrainTexture);
     gp.spread   = get (ParameterId::GrainSpread);
     gp.mix      = get (ParameterId::GrainMix);
+    gp.syncedMode = get (ParameterId::GrainSync) > 0.5f;
+    gp.steps      = map::grainSteps (get (ParameterId::GrainSteps));
+    gp.pulses     = map::grainPulses (get (ParameterId::GrainPulses), gp.steps);
+    gp.rotate     = map::grainRotate (get (ParameterId::GrainRotate), gp.steps);
+    gp.pitchQuantIndex = grainPitchQuantScaleIndex (get (ParameterId::GrainPitchQuant));
+    gp.loopStart01     = get (ParameterId::LoopStart);
+    gp.loopEnd01       = get (ParameterId::LoopEnd);
     engine_.getGranular().setParams (gp);
+    engine_.setGranularBlockTiming (granularTiming);
     if (materialPlayheadScrub)
         // Strong duck of granular layer while scanning; tape path does the scrubbing.
         engine_.snapGrainMix (gp.mix * 0.05f);

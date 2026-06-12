@@ -1,4 +1,5 @@
 #include "Engine.h"
+#include "../audio/GranularEngine.h"
 #include "../audio/WarpLaunchSync.h"
 #include "../util/MathUtils.h"
 
@@ -428,6 +429,23 @@ void Engine::setSelectedPage (Page page)
 {
     selectedPage_     = page;
     screen_.selectedPage = page; // Keep LCD in sync even before the next process() / updateScreenModel().
+    if (page != Page::Granular)
+    {
+        granularEncoderPage_.store (0, std::memory_order_relaxed);
+        screen_.granularEncoderPage = 0;
+    }
+}
+
+void Engine::setGranularEncoderPage (int page01)
+{
+    const int p = (page01 > 0) ? 1 : 0;
+    granularEncoderPage_.store (p, std::memory_order_relaxed);
+    screen_.granularEncoderPage = static_cast<uint8_t> (p);
+}
+
+int Engine::getGranularEncoderPage() const
+{
+    return granularEncoderPage_.load (std::memory_order_relaxed);
 }
 
 void Engine::setModPatch (const ModPatch& patch)
@@ -524,13 +542,23 @@ void Engine::processChunk (float** inputs, float** outputs,
     const float* busLPtrs[kNumTracks];
     const float* busRPtrs[kNumTracks];
 
+    const double beatAtChunkStart = beatAtBlockStart;
+    const double hostBpm          = clock_.getBpm();
+    const bool   bpmOk            = hostBpm > 1.0 && hostBpm < 999.0;
+    const double bpmUse           = bpmOk ? hostBpm : 120.0;
+    GranularBlockTiming granularTiming {};
+    granularTiming.beatAtBlockStart = beatAtChunkStart;
+    granularTiming.bpm              = bpmUse;
+    granularTiming.samplesPerBeat = sampleRate_ * 60.0 / bpmUse;
+    granularTiming.hostPlaying    = transport_.isPlaying();
+
     for (int t = 0; t < kNumTracks; ++t)
     {
         const auto ts = static_cast<size_t> (t);
         auto& track = tracks_[ts];
 
         const bool playheadScrub = materialPlayheadScrubActive_[ts].load (std::memory_order_relaxed);
-        track.updateParameters (params_, t, playheadScrub, clock_.getBpm());
+        track.updateParameters (params_, t, playheadScrub, bpmUse, granularTiming);
         track.process (busL_[ts].data(), busR_[ts].data(), numSamples);
 
         float peak = trackPeaks_[ts] * 0.92f;
@@ -606,15 +634,22 @@ void Engine::updateScreenModel()
         params_.effective (selected, ParameterId::TapeSpeedSnap);
 
     const auto& matBuf = getTrackMaterialBuffer (selected);
-    tracks_[static_cast<size_t> (selected)].getEngine().getGranular().fillGrainDisplay (
-        matBuf, screen_.grainDisplay.data(), kGrainsPerTrack);
+    const auto& grSel  = tracks_[static_cast<size_t> (selected)].getEngine().getGranular();
+    grSel.fillGrainDisplay (matBuf, screen_.grainDisplay.data(), kGrainsPerTrack);
+
+    screen_.granularPattern.syncOn        = grSel.getPatternSyncOn();
+    screen_.granularPattern.divisionIndex  = grSel.getPatternDivisionIndex();
+    screen_.granularPattern.steps         = grSel.getPatternSteps();
+    screen_.granularPattern.pulses         = grSel.getPatternPulses();
+    screen_.granularPattern.rotate         = grSel.getPatternRotate();
+    screen_.granularPattern.currentStep    = grSel.getPatternCurrentStep();
+    screen_.granularPattern.mask           = grSel.getPatternMask();
 
     const int matFrameCount = matBuf.getNumFrames();
     if (selectedPage_ == Page::Granular && matFrameCount > 1)
     {
         const float tf = static_cast<float> (matFrameCount);
-        tracks_[static_cast<size_t> (selected)].getEngine().getGranular().getGrainFocusWindow01 (
-            tf, screen_.grainFocusStart01, screen_.grainFocusLen01);
+        grSel.getGrainFocusWindow01 (tf, screen_.grainFocusStart01, screen_.grainFocusLen01);
     }
     else
     {
@@ -644,11 +679,14 @@ void Engine::updateScreenModel()
         screen_.materialViewEnd01   = 1.0f;
     }
 
+    const int granularEncPage = getGranularEncoderPage();
+    screen_.granularEncoderPage = static_cast<uint8_t> (granularEncPage);
+
     int visible = 0;
     screen_.paramModOffset.fill (0.0f);
     for (int slot = 0; slot < kMaxParamsPerPage; ++slot)
     {
-        const ParameterId id = PageModel::parameterForSlot (selectedPage_, slot);
+        const ParameterId id = PageModel::parameterForSlot (selectedPage_, slot, granularEncPage);
         if (id == ParameterId::Count)
             break;
         const auto ss = static_cast<size_t> (slot);

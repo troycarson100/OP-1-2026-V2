@@ -62,6 +62,4 @@ struct ModPatch
     std::array<std::array<std::array<std::array<ModMappingDepth, kMaxModMappingEncoders>, kModMapTargetPages>, kModSlotsPerTrack>, kNumTracks> maps {};
 };
 
-static_assert (kMaxModMappingEncoders == 8, "Keep in sync with PageModel::kMaxParamsPerPage");
-
 } // namespace sculpt

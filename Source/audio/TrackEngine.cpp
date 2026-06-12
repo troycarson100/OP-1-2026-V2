@@ -1,4 +1,5 @@
 #include "TrackEngine.h"
+#include "GranularEngine.h"
 #include "SampleBuffer.h"
 #include "../core/ParameterIds.h"
 #include "../util/MathUtils.h"
@@ -33,6 +34,11 @@ void TrackEngine::reset()
     color_.reset();
     space_.reset();
     mixBus_.reset();
+}
+
+void TrackEngine::setGranularBlockTiming (const GranularBlockTiming& t)
+{
+    granular_.setBlockTiming (t);
 }
 
 void TrackEngine::process (const SampleBuffer& material, float* outL, float* outR, int numSamples)

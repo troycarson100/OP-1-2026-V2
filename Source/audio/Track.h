@@ -9,6 +9,7 @@ namespace sculpt
 {
 
 class ParameterState;
+struct GranularBlockTiming;
 
 // One of the four performance tracks. Owns its material, capture, trigger
 // state and DSP chain. Pulls its normalized parameters from ParameterState
@@ -33,8 +34,9 @@ public:
     // Sync all per-track parameters (with modulation applied) into the DSP.
     // When materialPlayheadScrub is true, MaterialPlayhead re-seeks tape even if the track is playing.
     // hostBpm: transport / manual BPM from Clock (Warp mode only).
+    // granularTiming: beat at chunk start, samples/beat, etc. (must match Engine clock chunk).
     void updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub,
-                           double hostBpm);
+                           double hostBpm, const GranularBlockTiming& granularTiming);
 
     // Overwrites outL/outR with this track's output.
     void process (float* outL, float* outR, int numSamples);

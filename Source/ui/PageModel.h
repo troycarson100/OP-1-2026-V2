@@ -19,7 +19,7 @@ enum class Page : int
     Count
 };
 
-constexpr int kMaxParamsPerPage = 8;
+constexpr int kMaxParamsPerPage = 16;
 
 // Static page descriptions - which parameters a page puts under the encoders.
 class PageModel
@@ -29,9 +29,10 @@ public:
 
     // Returns the ParameterId for an encoder slot on a page, or
     // ParameterId::Count when the slot is empty.
-    static ParameterId parameterForSlot (Page page, int slot);
+    // Granular uses two 8-encoder sub-pages: `granularEncoderPage` 0 = core grains, 1 = sync/Euclidean/pitch quant.
+    static ParameterId parameterForSlot (Page page, int slot, int granularEncoderPage = 0);
 
-    static int parameterCount (Page page);
+    static int parameterCount (Page page, int granularEncoderPage = 0);
 };
 
 } // namespace sculpt

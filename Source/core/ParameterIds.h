@@ -38,6 +38,14 @@ enum class ParameterId : int
     GrainSpread,
     GrainMix,
 
+    // >0.5 = synced (musical division + Euclidean); <=0.5 = free Hz cloud (default).
+    GrainSync,
+    GrainSteps,
+    GrainPulses,
+    GrainRotate,
+    // 0 = continuous pitch; stepped scale indices for synced quantization.
+    GrainPitchQuant,
+
     FilterCutoff,
     FilterResonance,
     FilterMix,
@@ -116,6 +124,11 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::GrainTexture:    return 0.20f;
         case ParameterId::GrainSpread:     return 0.50f;
         case ParameterId::GrainMix:        return 0.50f;
+        case ParameterId::GrainSync:       return 0.0f;   // Free
+        case ParameterId::GrainSteps:      return 0.5f;   // ~8 steps
+        case ParameterId::GrainPulses:     return 0.5f;
+        case ParameterId::GrainRotate:     return 0.0f;
+        case ParameterId::GrainPitchQuant: return 0.0f;   // off
         case ParameterId::FilterCutoff:    return 0.80f;
         case ParameterId::FilterResonance: return 0.20f;
         case ParameterId::FilterMix:       return 1.0f;
@@ -197,6 +210,55 @@ namespace map
     inline float grainDensityHz (float n)    { return 1.0f + n * n * 59.0f; }    // 1 .. 60 grains/s
     inline float grainPitchRatio (float n)   { return semitonesToRatio ((n - 0.5f) * 12.0f); } // +/- 12 semitones
 
+    // Synced mode: beats between grain hits (musical interval). Table order: whole .. 1/32 with dotted/triplets.
+    inline int grainRateDivisionTableIndex (float n01)
+    {
+        constexpr int kTableLen = 14;
+        const float   n       = clamp01 (n01);
+        const int     idx     = static_cast<int> (std::lround (n * static_cast<float> (kTableLen - 1)));
+        return std::clamp (idx, 0, kTableLen - 1);
+    }
+
+    // Beats per spawn period (larger = slower).
+    inline double grainRateDivisionBeats (float n01)
+    {
+        // Order: 4, 2, 1, 3/4, 1/2, 3/8, 1/3, 1/4, 3/16, 1/6, 1/8, 1/12, 1/16, 1/32
+        static constexpr double kDivBeats[14] = {
+            4.0, 2.0, 1.0, 0.75, 0.5, 0.375, 1.0 / 3.0, 0.25, 0.1875, 1.0 / 6.0, 0.125, 1.0 / 12.0, 0.0625, 1.0 / 32.0
+        };
+        return kDivBeats[static_cast<size_t> (grainRateDivisionTableIndex (n01))];
+    }
+
+    inline int grainSteps (float n01)
+    {
+        return 1 + static_cast<int> (std::lround (clamp01 (n01) * 15.0f));
+    }
+
+    inline int grainPulses (float n01, int steps)
+    {
+        steps = std::clamp (steps, 1, 16);
+        const int span = steps - 1;
+        if (span <= 0)
+            return 1;
+        return 1 + static_cast<int> (std::lround (clamp01 (n01) * static_cast<float> (span)));
+    }
+
+    inline int grainRotate (float n01, int steps)
+    {
+        steps = std::clamp (steps, 1, 16);
+        if (steps <= 1)
+            return 0;
+        const int span = steps - 1;
+        return static_cast<int> (std::lround (clamp01 (n01) * static_cast<float> (span)));
+    }
+
+    // Max humanization offset in samples for synced texture (full knob = map constant in seconds).
+    inline float grainSyncHumanizeMaxSamples (double sampleRate)
+    {
+        const double sr = sampleRate > 1.0e-6 ? sampleRate : 44100.0;
+        return static_cast<float> (0.005 * sr);
+    }
+
     inline float filterCutoffHz (float n)    { return 40.0f * std::pow (2.0f, n * 8.3f); }        // ~40Hz .. ~12.6kHz
     inline float filterResonance (float n)   { return 0.5f + n * 9.0f; }                          // SVF Q
     // Spectral: pole radius r in [0.92, 0.9998] — controls ring/decay time.
@@ -251,6 +313,11 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::GrainTexture:    return "Grain Texture";
         case ParameterId::GrainSpread:     return "Grain Spread";
         case ParameterId::GrainMix:        return "Grain Mix";
+        case ParameterId::GrainSync:       return "Grain Sync";
+        case ParameterId::GrainSteps:      return "Grain Steps";
+        case ParameterId::GrainPulses:     return "Grain Pulses";
+        case ParameterId::GrainRotate:     return "Grain Rotate";
+        case ParameterId::GrainPitchQuant: return "Grain Pitch Q";
         case ParameterId::FilterCutoff:    return "Filter Cutoff";
         case ParameterId::FilterResonance: return "Resonance";
         case ParameterId::FilterMix:       return "Filter Mix";
