@@ -134,6 +134,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
                 else if (id == ParameterId::TapeSpeedSnap)
                     layout.add (std::make_unique<juce::AudioParameterBool> (
                         juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
+                else if (id == ParameterId::SampleRootBpm)
+                {
+                    auto attrs =
+                        juce::AudioParameterFloatAttributes()
+                            .withStringFromValueFunction ([] (float v, int)
+                            {
+                                return juce::String (juce::roundToInt (sculpt::map::sampleRootBpm (v)));
+                            })
+                            .withValueFromStringFunction ([] (const juce::String& text) -> float
+                            {
+                                const int bpm = juce::jlimit (40, 240, text.getIntValue());
+                                return (static_cast<float> (bpm) - 40.0f) / 200.0f;
+                            });
+                    layout.add (std::make_unique<juce::AudioParameterFloat> (
+                        juce::ParameterID { pid, 1 }, pname,
+                        juce::NormalisableRange<float> (0.0f, 1.0f, 1.0f / 200.0f),
+                        sculpt::parameterDefault (id), std::move (attrs)));
+                }
                 else
                     addParam (pid, pname, parameterDefault (id));
             }

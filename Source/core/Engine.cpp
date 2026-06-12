@@ -642,6 +642,10 @@ void Engine::updateScreenModel()
     }
     screen_.numVisibleParams = visible;
 
+    screen_.rootBpmWhole =
+        static_cast<int> (std::lround (static_cast<double> (
+            map::sampleRootBpm (params_.effective (selected, ParameterId::SampleRootBpm)))));
+
     // Spectral filter band display for the Filter page.
     const bool spectral = params_.effective (selected, ParameterId::FilterMode) > 0.5f;
     screen_.filterSpectralMode = spectral;

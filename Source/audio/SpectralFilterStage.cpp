@@ -24,6 +24,15 @@ static constexpr float kWetTrim    = 0.8f;
 // does not leak raw granular through the resonator.
 static constexpr float kDryBleed   = 0.07f;
 
+// Bell-like partial stretch: higher bank indices sharpen slightly vs. a pure
+// harmonic ladder (stiffness / idiophone character, not pitch randomness).
+static constexpr float kInharmonicCoeff = 3.0e-6f;
+
+// Decay tilt across the bank: lower partials keep energy longer, highs fade a
+// bit faster (more natural metal decay than a single global T60 on every mode).
+static constexpr float kDecayLowBoost  = 0.11f;   // index 0  → +11% T60
+static constexpr float kDecayHighTrim  = 0.09f;   // last idx → −9% T60
+
 static inline float midiToHz (float midi)
 {
     return 440.0f * std::pow (2.0f, (midi - 69.0f) / 12.0f);
@@ -33,7 +42,9 @@ static inline float midiToHz (float midi)
 // that it is a net for accidents, never part of the tone.
 static inline float softLimit (float x)
 {
-    constexpr float knee = 4.0f;
+    // Slightly higher knee so narrow high-Q stacks retain a bit more attack
+    // “clang” before the soft ceiling (still only a safety net).
+    constexpr float knee = 4.2f;
     const float a = std::fabs (x);
     if (a <= knee)
         return x;
@@ -95,13 +106,21 @@ void SpectralFilterStage::assignBand (int index, float midiNote, float qRes, flo
 {
     const float fs  = static_cast<float> (sampleRate_);
     const float nyq = fs * 0.475f;
-    const float f   = midiToHz (midiNote);
+    const float f0  = midiToHz (midiNote);
+    const float rk  = static_cast<float> (index);
+    const float f   = clampf (f0 * (1.0f + kInharmonicCoeff * rk * rk), 20.0f, nyq);
 
     auto& bd = bands_[static_cast<size_t> (index)];
 
+    const float denom = static_cast<float> (kNumBands > 1 ? kNumBands - 1 : 1);
+    const float idxNorm = rk / denom;
+    const float decayScale =
+        (1.0f + kDecayLowBoost) - (kDecayLowBoost + kDecayHighTrim) * clamp01 (idxNorm);
+    const float t60Eff = t60 * decayScale;
+
     // Q combines both knobs: Resonance sets constant-Q bandwidth, Decay sets
     // a minimum ring time (T60 → Q via Q = pi * f * t60 / ln(1000)).
-    const float qDecay = kPi * f * t60 / 6.91f;
+    const float qDecay = kPi * f * t60Eff / 6.91f;
     const float q      = clampf (qRes > qDecay ? qRes : qDecay, 0.5f, 500.0f);
 
     bd.tK  = 1.0f / q;

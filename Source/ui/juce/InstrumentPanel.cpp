@@ -346,7 +346,7 @@ namespace
             case P::MaterialTimeMode:
                 return (v > 0.5f) ? "Warp" : "Tape";
             case P::SampleRootBpm:
-                return juce::String (sculpt::map::sampleRootBpm (v), 1);
+                return juce::String (juce::roundToInt (sculpt::map::sampleRootBpm (v)));
             case P::GrainSync:
                 return (v > 0.5f) ? "Sync" : "Free";
             case P::GrainDensity:
@@ -433,7 +433,11 @@ namespace
             g.setColour (kAccent);
             g.setFont (juce::FontOptions (12.0f));
             const auto pid = screen.paramIds[ps];
-            g.drawText (formatParamCellValue (pid, v, screen), valueArea, juce::Justification::centred, true);
+            const juce::String valueTxt =
+                (pid == sculpt::ParameterId::SampleRootBpm)
+                    ? juce::String (screen.rootBpmWhole)
+                    : formatParamCellValue (pid, v, screen);
+            g.drawText (valueTxt, valueArea, juce::Justification::centred, true);
 
             if (showMod)
             {

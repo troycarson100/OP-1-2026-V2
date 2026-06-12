@@ -97,6 +97,9 @@ struct ScreenModel
     std::array<ParameterId, kMaxParamsPerPage> paramIds {};
     int numVisibleParams = 0;
 
+    // Selected track: Root BPM as a whole number for the Material LCD cell (engine-written each block).
+    int rootBpmWhole = 120;
+
     // Filter page: per-band envelope for the spectral resonator display (48 bands).
     // All zero when in LPF mode. Size matches SpectralFilterStage::kNumBands.
     static constexpr int kFilterBands = 48;

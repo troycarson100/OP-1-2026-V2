@@ -158,7 +158,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialWaveZoom: return 0.0f;   // full waveform
         case ParameterId::MaterialPlayhead: return 0.0f;   // start of material
         case ParameterId::MaterialTimeMode: return 0.0f;   // tape mode
-        case ParameterId::SampleRootBpm:   return 0.4f;    // ~120 BPM (40 + 0.4*200)
+        case ParameterId::SampleRootBpm:   return 0.4f;    // 120 BPM (40 + 0.4*200)
         case ParameterId::TapeSpeedSnap:   return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -186,10 +186,12 @@ namespace map
         return std::clamp (x, -100, 100);
     }
 
-    // Warp mode: sample's original BPM (40 .. 240) from normalized knob.
+    // Warp mode: sample's original BPM (40 .. 240), whole numbers only.
     inline float sampleRootBpm (float n)
     {
-        return 40.0f + clamp01 (n) * 200.0f;
+        const float x = 40.0f + clamp01 (n) * 200.0f;
+        const int   b = std::clamp (static_cast<int> (std::lround (static_cast<double> (x))), 40, 240);
+        return static_cast<float> (b);
     }
 
     // Warp mode only: varispeed multiplier around unity. n=0.5 -> 1.0; ends ~0.25x .. 4x.

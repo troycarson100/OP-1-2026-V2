@@ -1,0 +1,20 @@
+---
+description: Quit and relaunch SculptSampler Standalone after plugin code or build changes so the new binary loads
+alwaysApply: true
+---
+
+# Standalone: close and reopen after updates
+
+macOS does not hot-reload the Standalone `.app`. After any change that affects the built binary (e.g. `Source/**`, `CMakeLists.txt`, JUCE wrapper), **treat a full app restart as required** for the user to hear and test the update.
+
+## End of each agent turn that changed executable / plugin code
+
+1. If a rebuild was run or is implied, note that in the summary.
+2. **Tell the user explicitly** to **fully quit** SculptSampler Standalone (Cmd+Q or Quit from the menu — not only closing the window if the process stays alive), then **reopen** the app from the current build output, for example:
+   - Debug: `build/SculptSampler_artefacts/Debug/Standalone/SculptSampler.app`
+   - Adjust `Debug` → `Release` when relevant.
+3. Do not assume the running instance reflects new code until they have quit and reopened.
+
+## Optional automation
+
+Only if the user has asked for hands-off relaunch or it clearly fits their workflow: you may suggest `open` on that `.app` path **after** they quit, or document that they should quit first before `open` to avoid two instances. Avoid `killall` unless they requested it — it can discard unsaved plugin state.

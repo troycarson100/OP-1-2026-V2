@@ -10,7 +10,9 @@ namespace sculpt
 // Morphing resonator inspired by the S-4 Ring device: a 48-band tuned filter
 // bank that IS the signal path.  Bands are TPT SVF bandpass resonators placed
 // directly on the scale degrees of the selected Key (Free = continuous grid),
-// with a subtle L/R detune and alternate band panning for width.
+// with a subtle L/R detune and alternate band panning for width.  Partial
+// frequencies use light stiffness-style stretching vs. index for a more
+// idiophone/bell-like spectrum; decay time tilts slightly longer for lows.
 //   Cutoff    — smooth shoulder across the band index (even knob feel)
 //   Resonance — constant-Q bandwidth; narrow bands BLOOM louder (analog-style)
 //   Decay     — minimum ring time
