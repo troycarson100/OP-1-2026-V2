@@ -645,6 +645,12 @@ void Engine::updateScreenModel()
     screen_.granularPattern.currentStep    = grSel.getPatternCurrentStep();
     screen_.granularPattern.mask           = grSel.getPatternMask();
 
+    screen_.grainPatternPreset.patternActiveIndex = grSel.getGrainPatternActiveIndex();
+    screen_.grainPatternPreset.patternNameIndex   = grSel.getGrainPatternActiveIndex();
+    screen_.grainPatternPreset.amount01         = grSel.getGrainPatternAmount();
+    screen_.grainPatternPreset.sequenceStep16   = grSel.getGrainPatternSequenceStep16();
+    screen_.grainPatternPreset.stepAccentNorm = grSel.getGrainPatternStepLed();
+
     const int matFrameCount = matBuf.getNumFrames();
     if (selectedPage_ == Page::Granular && matFrameCount > 1)
     {

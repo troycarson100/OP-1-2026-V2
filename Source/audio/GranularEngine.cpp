@@ -7,11 +7,22 @@
 #include "../core/ParameterIds.h"
 #include "../util/Constants.h"
 #include "../util/Euclidean.h"
+#include "../util/GrainPatternBank.h"
 #include "../util/GrainPitchScales.h"
 #include "../util/MathUtils.h"
 
 namespace sculpt
 {
+
+void GranularEngine::setActive (bool shouldSpawn)
+{
+    if (shouldSpawn && ! spawning_)
+    {
+        activePatternIndex_        = map::grainPatternIndex (params_.grainPattern);
+        lastLatchPatternGridIndex_ = std::numeric_limits<int64_t>::min();
+    }
+    spawning_ = shouldSpawn;
+}
 
 void GranularEngine::prepare (double sampleRate)
 {
@@ -37,6 +48,10 @@ void GranularEngine::reset()
     patternRotate_              = 0;
     patternCurrentStep_         = 0;
     patternMask_                = 0;
+    activePatternIndex_         = 0;
+    lastLatchPatternGridIndex_  = std::numeric_limits<int64_t>::min();
+    patternSequenceStep16_      = 0;
+    patternStepLed_.fill (0.0f);
 }
 
 void GranularEngine::updateEuclideanMask()
@@ -53,6 +68,26 @@ void GranularEngine::updateEuclideanMask()
     }
 }
 
+void GranularEngine::maybeLatchPattern (int64_t patternGridIndex)
+{
+    if (patternGridIndex != lastLatchPatternGridIndex_)
+    {
+        lastLatchPatternGridIndex_ = patternGridIndex;
+        activePatternIndex_        = map::grainPatternIndex (params_.grainPattern);
+    }
+}
+
+void GranularEngine::updatePatternLedSnapshot()
+{
+    const float amt = clamp01 (params_.grainPatternAmount);
+    for (int s = 0; s < 16; ++s)
+    {
+        const auto& st = grainPatternStep (activePatternIndex_, s);
+        const float db = map::grainPatternGainDbEffective (st.gainDb, amt);
+        patternStepLed_[static_cast<size_t> (s)] = clamp01 ((db + 12.0f) / 15.0f);
+    }
+}
+
 double GranularEngine::nextSpawnIntervalFree()
 {
     const double densityHz = static_cast<double> (map::grainDensityHz (params_.density));
@@ -61,22 +96,34 @@ double GranularEngine::nextSpawnIntervalFree()
     return interval > 10.0 ? interval : 10.0;
 }
 
-void GranularEngine::spawnGrainFree (const SampleBuffer& buffer)
-{
-    spawnGrainAt (buffer, 0, false, 1.0f, -1);
-}
-
-void GranularEngine::spawnGrainAt (const SampleBuffer& buffer, int startOffsetInBlock, bool syncedOverlap,
-                                   float accentMul, int stepIndexForAccent)
+void GranularEngine::spawnOneGrain (const SampleBuffer& buffer, int startOffsetInBlock, bool syncedOverlap,
+                                    float accentMul, int euclidStepForAccent, const GrainPatternStep& patStep,
+                                    float patternAmount01)
 {
     GrainVoice* voice = pool_.findFreeVoice();
     if (voice == nullptr)
         return;
 
+    const float amt = clamp01 (patternAmount01);
+
+    float   posOff   = 0.0f;
+    int     pitchAdd = 0;
+    float   sizeSc   = 1.0f;
+    float   gainDbP  = 0.0f;
+
+    if (amt > 1.0e-8f)
+    {
+        posOff   = patStep.posOffset * amt;
+        pitchAdd = static_cast<int> (std::lround (static_cast<float> (patStep.pitchSemis) * amt));
+        sizeSc   = lerp (1.0f, patStep.sizeScale, amt);
+        gainDbP  = patStep.gainDb * amt;
+    }
+
     const float frames = static_cast<float> (buffer.getNumFrames ());
 
-    const float sizeSeconds   = map::grainSizeSeconds (params_.size);
-    const int   lengthSamples = static_cast<int> (sizeSeconds * static_cast<float> (sampleRate_));
+    const float sizeSecondsBase = map::grainSizeSeconds (params_.size);
+    const float sizeSeconds     = sizeSecondsBase * sizeSc;
+    const int   lengthSamples   = std::max (8, static_cast<int> (sizeSeconds * static_cast<float> (sampleRate_)));
 
     const float loopA = clamp01 (params_.loopStart01);
     const float loopB = clamp01 (params_.loopEnd01);
@@ -84,11 +131,18 @@ void GranularEngine::spawnGrainAt (const SampleBuffer& buffer, int startOffsetIn
     const float le    = loopB * (frames - 1.0f);
     const float loopLenFrames = std::max (1.0f, le - ls);
 
+    float posNorm = clamp01 (params_.position);
+    {
+        float w = posNorm + posOff;
+        w       = w - std::floor (w);
+        posNorm = clamp01 (w);
+    }
+
     float startFrame = 0.0f;
 
     if (params_.syncedMode)
     {
-        const float base = ls + clamp01 (params_.position) * loopLenFrames;
+        const float base = ls + posNorm * loopLenFrames;
         if (params_.spray <= 1.0e-5f)
             startFrame = base;
         else
@@ -100,7 +154,7 @@ void GranularEngine::spawnGrainAt (const SampleBuffer& buffer, int startOffsetIn
     }
     else
     {
-        startFrame = params_.position * (frames - 1.0f)
+        startFrame = posNorm * (frames - 1.0f)
                      + params_.spray * 0.5f * frames * rng_.nextBipolar ();
     }
 
@@ -111,7 +165,7 @@ void GranularEngine::spawnGrainAt (const SampleBuffer& buffer, int startOffsetIn
             startFrame += frames;
     }
 
-    float semis = (params_.pitch - 0.5f) * 12.0f;
+    float semis = (params_.pitch - 0.5f) * 12.0f + static_cast<float> (pitchAdd);
     if (params_.syncedMode && params_.pitchQuantIndex > 0)
         semis = quantizeGrainPitchSemitones (semis, params_.pitchQuantIndex);
 
@@ -140,7 +194,7 @@ void GranularEngine::spawnGrainAt (const SampleBuffer& buffer, int startOffsetIn
     float           amp                  = kGrainLaunchGain / denom;
 
     int firstPulseStep = -1;
-    if (params_.syncedMode)
+    if (params_.syncedMode && euclidStepForAccent >= 0)
     {
         const int steps = std::clamp (params_.steps, 1, 16);
         for (int i = 0; i < steps; ++i)
@@ -151,11 +205,12 @@ void GranularEngine::spawnGrainAt (const SampleBuffer& buffer, int startOffsetIn
                 break;
             }
         }
-        if (firstPulseStep >= 0 && stepIndexForAccent == firstPulseStep)
+        if (firstPulseStep >= 0 && euclidStepForAccent == firstPulseStep)
             amp *= dbToGain (2.0f);
     }
 
     amp *= accentMul;
+    amp *= dbToGain (gainDbP);
 
     GrainVoice::StartParams sp;
     sp.startFrame           = startFrame;
@@ -165,6 +220,53 @@ void GranularEngine::spawnGrainAt (const SampleBuffer& buffer, int startOffsetIn
     sp.gainR                = gainR * amp;
     sp.startOffsetSamples   = std::max (0, startOffsetInBlock);
     voice->start (sp);
+}
+
+void GranularEngine::spawnGrainFree (const SampleBuffer& buffer, int numSamples)
+{
+    const double divBeats = map::grainRateDivisionBeats (params_.density);
+    const double spb      = timing_.samplesPerBeat;
+    const double beat0    = timing_.beatAtBlockStart;
+
+    while (samplesUntilNext_ <= 0.0)
+    {
+        const double interval = nextSpawnIntervalFree ();
+        const double beatSpawn =
+            beat0 + (static_cast<double> (numSamples) + samplesUntilNext_) / spb;
+        const int64_t g = (divBeats > 1.0e-12 && spb > 1.0e-12 && std::isfinite (divBeats) && std::isfinite (spb))
+                              ? static_cast<int64_t> (std::floor (beatSpawn / divBeats + 1.0e-12))
+                              : 0LL;
+        maybeLatchPattern (g);
+        const int step16 = static_cast<int> (((g % 16) + 16) % 16);
+        const auto& st   = grainPatternStep (activePatternIndex_, step16);
+
+        int sampleOffset = static_cast<int> (std::lround ((beatSpawn - beat0) * spb));
+        sampleOffset     = std::clamp (sampleOffset, 0, std::max (0, numSamples - 1));
+
+        uint8_t rat = st.ratchet;
+        if (rat < 1)
+            rat = 1;
+        if (rat > 4)
+            rat = 4;
+        if (params_.grainPatternAmount <= 1.0e-8f)
+            rat = 1;
+
+        const int divSamples = (divBeats > 1.0e-12 && spb > 1.0e-12)
+                                   ? std::max (1, static_cast<int> (std::lround (divBeats * spb)))
+                                   : std::max (1, numSamples);
+        const int stride   = std::max (1, divSamples / static_cast<int> (rat));
+
+        const int stepsE = std::clamp (params_.steps, 1, 16);
+        const int acc    = static_cast<int> (((g % stepsE) + stepsE) % stepsE);
+
+        for (int k = 0; k < static_cast<int> (rat); ++k)
+        {
+            const int off = std::clamp (sampleOffset + k * stride, 0, std::max (0, numSamples - 1));
+            spawnOneGrain (buffer, off, false, 1.0f, acc, st, params_.grainPatternAmount);
+        }
+
+        samplesUntilNext_ += interval;
+    }
 }
 
 void GranularEngine::processSyncedBoundaries (const SampleBuffer& buffer, int numSamples)
@@ -197,11 +299,15 @@ void GranularEngine::processSyncedBoundaries (const SampleBuffer& buffer, int nu
         if (B < beat0 - 1.0e-9 || B > beat1 + 1.0e-9)
             continue;
 
+        maybeLatchPattern (n);
+        const int step16 = static_cast<int> (((n % 16) + 16) % 16);
+        patternSequenceStep16_ = step16;
+
         int stepIndex = 0;
         if (steps > 0)
         {
             const int64_t si = static_cast<int64_t> (std::floor (B / divBeats + 1.0e-12));
-            stepIndex      = static_cast<int> (((si % steps) + steps) % steps);
+            stepIndex          = static_cast<int> (((si % steps) + steps) % steps);
         }
 
         patternCurrentStep_ = stepIndex;
@@ -221,8 +327,26 @@ void GranularEngine::processSyncedBoundaries (const SampleBuffer& buffer, int nu
         sampleOffset += h;
         sampleOffset = std::clamp (sampleOffset, 0, std::max (0, numSamples - 1));
 
+        const auto& st = grainPatternStep (activePatternIndex_, step16);
+
+        uint8_t rat = st.ratchet;
+        if (rat < 1)
+            rat = 1;
+        if (rat > 4)
+            rat = 4;
+        if (params_.grainPatternAmount <= 1.0e-8f)
+            rat = 1;
+
+        const int divSamples = std::max (1, static_cast<int> (std::lround (divBeats * spb)));
+        const int stride     = std::max (1, divSamples / static_cast<int> (rat));
+
         const float accent = 1.0f;
-        spawnGrainAt (buffer, sampleOffset, true, accent, stepIndex);
+        for (int k = 0; k < static_cast<int> (rat); ++k)
+        {
+            const int off = std::clamp (sampleOffset + k * stride, 0, std::max (0, numSamples - 1));
+            spawnOneGrain (buffer, off, true, accent, stepIndex, st, params_.grainPatternAmount);
+        }
+
         lastFiredBoundaryBeat_ = B;
     }
 
@@ -230,6 +354,8 @@ void GranularEngine::processSyncedBoundaries (const SampleBuffer& buffer, int nu
     {
         const int64_t siEnd = static_cast<int64_t> (std::floor (beat1 / divBeats + 1.0e-12));
         patternCurrentStep_ = static_cast<int> (((siEnd % steps) + steps) % steps);
+        patternSequenceStep16_ =
+            static_cast<int> (((siEnd % 16) + 16) % 16);
     }
 }
 
@@ -260,14 +386,13 @@ void GranularEngine::process (const SampleBuffer& buffer, float* outL, float* ou
                 samplesUntilNext_ = 0.0;
             samplesUntilNext_ -= static_cast<double> (numSamples);
             while (samplesUntilNext_ <= 0.0)
-            {
-                spawnGrainFree (buffer);
-                samplesUntilNext_ += nextSpawnIntervalFree ();
-            }
+                spawnGrainFree (buffer, numSamples);
         }
     }
 
     pool_.renderAll (buffer, outL, outR, numSamples);
+
+    updatePatternLedSnapshot ();
 
     prevSyncedScheduler_ = params_.syncedMode;
 }

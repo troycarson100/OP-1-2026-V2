@@ -1,8 +1,11 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <limits>
 
 #include "GrainPool.h"
+#include "../util/GrainPatternTypes.h"
 #include "../util/Random.h"
 
 namespace sculpt
@@ -36,13 +39,16 @@ public:
         float spread   = 0.5f;
         float mix      = 0.5f;
 
-        bool  syncedMode     = false; // GrainSync > 0.5
-        int   steps          = 8;
-        int   pulses         = 4;
-        int   rotate         = 0;
+        bool  syncedMode      = false; // GrainSync > 0.5
+        int   steps           = 8;
+        int   pulses          = 4;
+        int   rotate          = 0;
         int   pitchQuantIndex = 0; // from GrainPitchQuant
-        float loopStart01    = 0.0f;
-        float loopEnd01      = 1.0f;
+        float loopStart01     = 0.0f;
+        float loopEnd01       = 1.0f;
+
+        float grainPattern        = 0.0f; // normalized → map::grainPatternIndex
+        float grainPatternAmount  = 0.0f; // 0 = bypass choreography
     };
 
     void prepare (double sampleRate);
@@ -50,11 +56,11 @@ public:
 
     void setParams (const Params& params) { params_ = params; }
     void setBlockTiming (const GranularBlockTiming& t) { timing_ = t; }
-    void setActive (bool shouldSpawn) { spawning_ = shouldSpawn; }
+    void setActive (bool shouldSpawn);
 
     void process (const SampleBuffer& buffer, float* outL, float* outR, int numSamples);
 
-    float getMix() const       { return params_.mix; }
+    float getMix() const          { return params_.mix; }
     int   getActiveGrains() const { return pool_.countActive(); }
 
     void fillGrainDisplay (const SampleBuffer& material, GrainDisplaySlot* out, int maxSlots) const;
@@ -69,16 +75,29 @@ public:
     int      getPatternCurrentStep() const noexcept { return patternCurrentStep_; }
     uint16_t getPatternMask() const noexcept { return patternMask_; }
 
+    int                         getGrainPatternActiveIndex() const noexcept { return activePatternIndex_; }
+    float                       getGrainPatternAmount() const noexcept { return params_.grainPatternAmount; }
+    int                         getGrainPatternSequenceStep16() const noexcept { return patternSequenceStep16_; }
+    const std::array<float, 16>& getGrainPatternStepLed() const noexcept { return patternStepLed_; }
+
+    /** Test-only: fixed PRNG seed for deterministic renders (default engine seed otherwise). */
+    void setRngSeedForTesting (uint32_t seed) noexcept { rng_.seed (seed); }
+
 private:
-    void spawnGrainFree (const SampleBuffer& buffer);
-    void spawnGrainAt (const SampleBuffer& buffer, int startOffsetInBlock, bool syncedOverlap,
-                        float accentMul, int stepIndexForAccent);
+    void maybeLatchPattern (int64_t patternGridIndex);
+
+    void spawnOneGrain (const SampleBuffer& buffer, int startOffsetInBlock, bool syncedOverlap,
+                        float accentMul, int euclidStepForAccent, const GrainPatternStep& patStep,
+                        float patternAmount01);
+
+    void spawnGrainFree (const SampleBuffer& buffer, int numSamples);
     double nextSpawnIntervalFree();
 
     void processSyncedBoundaries (const SampleBuffer& buffer, int numSamples);
     void updateEuclideanMask();
+    void updatePatternLedSnapshot();
 
-    GrainPool pool_;
+    GrainPool          pool_;
     Params             params_;
     GranularBlockTiming timing_;
     Random             rng_ { 0xA5A5A5A5u };
@@ -90,19 +109,24 @@ private:
     double lastDivBeats_          = -1.0;
     bool   prevSyncedScheduler_   = false;
 
-    uint16_t cachedEuclidMask_ = 0;
+    uint16_t cachedEuclidMask_   = 0;
     int      cachedEuclidSteps_ = -1;
     int      cachedEuclidPulses_ = -1;
     int      cachedEuclidRotate_ = -1;
 
     // Display copy (stable for updateScreenModel)
-    bool     patternSyncOn_         = false;
-    int      patternDivisionIndex_  = 0;
-    int      patternSteps_          = 8;
-    int      patternPulses_         = 4;
-    int      patternRotate_         = 0;
-    int      patternCurrentStep_    = 0;
-    uint16_t patternMask_           = 0;
+    bool     patternSyncOn_        = false;
+    int      patternDivisionIndex_ = 0;
+    int      patternSteps_         = 8;
+    int      patternPulses_        = 4;
+    int      patternRotate_        = 0;
+    int      patternCurrentStep_   = 0;
+    uint16_t patternMask_          = 0;
+
+    int      activePatternIndex_            = 0;
+    int64_t  lastLatchPatternGridIndex_    = std::numeric_limits<int64_t>::min();
+    int      patternSequenceStep16_        = 0;
+    std::array<float, 16> patternStepLed_ {};
 };
 
 } // namespace sculpt

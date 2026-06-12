@@ -13,7 +13,8 @@ namespace
           ParameterId::GrainPitch, ParameterId::GrainSpray, ParameterId::GrainTexture,
           ParameterId::GrainSpread, ParameterId::GrainMix },
         { ParameterId::GrainSync, ParameterId::GrainSteps, ParameterId::GrainPulses,
-          ParameterId::GrainRotate, ParameterId::GrainPitchQuant, kEmpty, kEmpty, kEmpty },
+          ParameterId::GrainRotate, ParameterId::GrainPitchQuant, ParameterId::GrainPattern,
+          ParameterId::GrainPatternAmount, kEmpty },
     };
 
     // Every row must list all kMaxParamsPerPage slots: omitted trailing elements value-init to

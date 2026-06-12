@@ -45,6 +45,10 @@ enum class ParameterId : int
     GrainRotate,
     // 0 = continuous pitch; stepped scale indices for synced quantization.
     GrainPitchQuant,
+    // Stepped preset bank index (see map::grainPatternIndex).
+    GrainPattern,
+    // 0 = pattern bypass (Phase-2-equivalent offsets); 1 = full relative pattern offsets.
+    GrainPatternAmount,
 
     FilterCutoff,
     FilterResonance,
@@ -129,6 +133,8 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::GrainPulses:     return 0.5f;
         case ParameterId::GrainRotate:     return 0.0f;
         case ParameterId::GrainPitchQuant: return 0.0f;   // off
+        case ParameterId::GrainPattern:     return 0.0f;   // Flat
+        case ParameterId::GrainPatternAmount: return 0.0f; // bypass
         case ParameterId::FilterCutoff:    return 0.80f;
         case ParameterId::FilterResonance: return 0.20f;
         case ParameterId::FilterMix:       return 1.0f;
@@ -259,6 +265,18 @@ namespace map
         return static_cast<float> (0.005 * sr);
     }
 
+    // 16 curated grain choreography presets (see GrainPatternBank.h).
+    inline int grainPatternIndex (float n01)
+    {
+        return std::clamp (static_cast<int> (std::lround (clamp01 (n01) * 15.0f)), 0, 15);
+    }
+
+    // Pattern per-step gain accent scaled by GrainPatternAmount (linear dB contribution).
+    inline float grainPatternGainDbEffective (float gainDbStep, float amount01)
+    {
+        return gainDbStep * clamp01 (amount01);
+    }
+
     inline float filterCutoffHz (float n)    { return 40.0f * std::pow (2.0f, n * 8.3f); }        // ~40Hz .. ~12.6kHz
     inline float filterResonance (float n)   { return 0.5f + n * 9.0f; }                          // SVF Q
     // Spectral: pole radius r in [0.92, 0.9998] — controls ring/decay time.
@@ -275,10 +293,11 @@ namespace map
     inline float mixEqBandGainDb (float n)   { return (clamp01 (n) - 0.5f) * 24.0f; }
 
     // Mix compressor threshold (dBFS, peak detector). Higher = less compression.
-    // Maps ~-45 .. +12 dBFS so fully clockwise is effectively "off" for normal program material.
-    inline float mixCompThresholdDb (float n) { return -45.0f + clamp01 (n) * 57.0f; }
+    // Maps ~-40 .. +6 dBFS so the knob stays in a useful range for normalized / post-EQ peaks;
+    // fully clockwise (~+6 dB) is effectively "off" with the compOff bypass rule (thrDb >= 1.5).
+    inline float mixCompThresholdDb (float n) { return -40.0f + clamp01 (n) * 46.0f; }
 
-    // Makeup gain after compression, 0 .. +14 dB.
+    // Makeup gain after compression (0 .. +14 dB).
     inline float mixCompMakeupDb (float n)   { return clamp01 (n) * 14.0f; }
 
     // Material waveform: fraction of buffer width visible (1 = full, ~0.03 = max zoom).
@@ -318,6 +337,8 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::GrainPulses:     return "Grain Pulses";
         case ParameterId::GrainRotate:     return "Grain Rotate";
         case ParameterId::GrainPitchQuant: return "Grain Pitch Q";
+        case ParameterId::GrainPattern:     return "Grain Pattern";
+        case ParameterId::GrainPatternAmount: return "Pattern Amt";
         case ParameterId::FilterCutoff:    return "Filter Cutoff";
         case ParameterId::FilterResonance: return "Resonance";
         case ParameterId::FilterMix:       return "Filter Mix";

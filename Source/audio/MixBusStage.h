@@ -58,9 +58,14 @@ private:
     float attCoeff_ = 0.01f;
     float relCoeff_ = 0.0001f;
 
-    // Smoothed makeup path gain (downward: snap to target; upward: slow) — reduces zipper / AM distortion.
+    // Smoothed linear gain toward targetLin (separate attack/release coeffs — no instant downward steps).
     float smoothGainLin_   = 1.0f;
+    float gainAttCoeff_    = 0.01f;
     float gainRelCoeff_    = 0.001f;
+
+    // Smoothes min(compGain, kWetCeil/pk) toward target; hard-capped each sample to instantaneous ceiling.
+    float gApplySmoothed_     = 1.0f;
+    float gApplySmoothCoeff_  = 0.05f;
 
     float compReductionMeter01_ = 0.0f;
 

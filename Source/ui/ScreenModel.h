@@ -22,6 +22,16 @@ struct GranularPatternSnapshot
     uint16_t mask          = 0;
 };
 
+// Grain choreography preset (Torso-style coordinated offsets). Audio thread writes snapshot.
+struct GrainPatternPresetSnapshot
+{
+    int                    patternActiveIndex = 0; // latched bank index 0..15
+    int                    patternNameIndex   = 0; // same index for kGrainPatternUiNames
+    float                  amount01           = 0.0f;
+    int                    sequenceStep16     = 0; // 0..15 beat-grid step for the 16-step table
+    std::array<float, 16> stepAccentNorm {};       // 0..1 LED row (from gain accent shape)
+};
+
 // Mod page LCD: one-cycle preview + depth layer + scanner (audio thread writes).
 struct ModLcdSnapshot
 {
@@ -100,6 +110,7 @@ struct ScreenModel
     float grainFocusLen01   = 0.0f;
 
     GranularPatternSnapshot granularPattern {};
+    GrainPatternPresetSnapshot grainPatternPreset {};
 
     // Mod page: oscilloscope-style source preview (see ModLcdSnapshot).
     ModLcdSnapshot modLcd {};

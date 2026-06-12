@@ -4,6 +4,7 @@
 #include "../PageModel.h"
 #include "../../core/FilterScales.h"
 #include "../../core/ParameterIds.h"
+#include "../../util/GrainPatternBank.h"
 #include "../../util/GrainPitchScales.h"
 
 namespace
@@ -373,6 +374,13 @@ namespace
                     default: return "?";
                 }
             }
+            case P::GrainPattern:
+            {
+                const int i = sculpt::map::grainPatternIndex (v);
+                return sculpt::kGrainPatternUiNames[static_cast<size_t> (i)];
+            }
+            case P::GrainPatternAmount:
+                return juce::String (juce::roundToInt (v * 100.0f)) + "%";
             default:
                 return juce::String (v, 3);
         }

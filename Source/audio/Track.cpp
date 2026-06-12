@@ -164,8 +164,10 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     gp.pulses     = map::grainPulses (get (ParameterId::GrainPulses), gp.steps);
     gp.rotate     = map::grainRotate (get (ParameterId::GrainRotate), gp.steps);
     gp.pitchQuantIndex = grainPitchQuantScaleIndex (get (ParameterId::GrainPitchQuant));
-    gp.loopStart01     = get (ParameterId::LoopStart);
-    gp.loopEnd01       = get (ParameterId::LoopEnd);
+    gp.loopStart01        = get (ParameterId::LoopStart);
+    gp.loopEnd01          = get (ParameterId::LoopEnd);
+    gp.grainPattern       = get (ParameterId::GrainPattern);
+    gp.grainPatternAmount = get (ParameterId::GrainPatternAmount);
     engine_.getGranular().setParams (gp);
     engine_.setGranularBlockTiming (granularTiming);
     if (materialPlayheadScrub)

@@ -9,11 +9,14 @@ namespace sculpt
 {
 namespace
 {
-    constexpr float kCompRatio      = 4.0f;
+    constexpr float kCompRatio      = 6.0f;
     // Fast attack so the level detector tracks peaks without sample-rate zipper from peak-vs-envelope max().
     constexpr float kAttackSec      = 0.001f;
-    constexpr float kReleaseSec   = 0.14f;
-    constexpr double kGainReleaseMs = 85.0;
+    constexpr float kReleaseSec     = 0.14f;
+    constexpr double kGainAttackMs  = 1.0;
+    constexpr double kGainReleaseMs = 48.0;
+    constexpr double kGApplySmoothMs = 0.35;
+    constexpr float kCompKneeDb     = 2.0f;
     constexpr float kEqLowHz        = 110.0f;
     constexpr float kEqLowQ         = 0.55f;
     constexpr float kEqMidHz        = 720.0f;
@@ -25,6 +28,42 @@ namespace
     {
         return std::fabs (a - b) < 1.0e-6f;
     }
+
+    // True-peak-ish control: gain law sees the larger of this sample's peak and the
+    // smoothed envelope, so transients are not one block late vs the level detector.
+    inline float controlPeak (float pk, float env)
+    {
+        return std::max (pk, env);
+    }
+
+    // Soft limiter — catches EQ overshoot and any residual over after gain cap.
+    inline float softLimitStereoBus (float x)
+    {
+        const float ax = std::fabs (x);
+        if (ax <= 0.78f)
+            return x;
+        const float s  = x >= 0.0f ? 1.0f : -1.0f;
+        const float ex = ax - 0.78f;
+        return s * (0.78f + 0.19f * std::tanh (ex * 3.8f));
+    }
+
+    // Soft knee around threshold: smooth gr vs level, C0 match to hard law above thr + knee/2.
+    inline float compReductionDbSoftKnee (float envDb, float thrDb, float ratio, float kneeDb)
+    {
+        const float thrLow  = thrDb - 0.5f * kneeDb;
+        const float slope   = 1.0f - 1.0f / ratio;
+        if (envDb <= thrLow)
+            return 0.0f;
+        if (envDb >= thrDb + 0.5f * kneeDb)
+        {
+            const float over = envDb - thrDb;
+            return std::min (0.0f, -over * slope);
+        }
+        const float t       = (envDb - thrLow) / kneeDb;
+        const float overTop = 0.5f * kneeDb;
+        const float grAtTop = -overTop * slope;
+        return std::min (0.0f, grAtTop * (t * t));
+    }
 } // namespace
 
 void MixBusStage::prepare (double sampleRate)
@@ -34,7 +73,9 @@ void MixBusStage::prepare (double sampleRate)
     const double sr = sampleRate_;
     attCoeff_ = static_cast<float> (1.0 - std::exp (-1.0 / (static_cast<double> (kAttackSec) * sr)));
     relCoeff_ = static_cast<float> (1.0 - std::exp (-1.0 / (static_cast<double> (kReleaseSec) * sr)));
+    gainAttCoeff_ = static_cast<float> (1.0 - std::exp (-1.0 / (kGainAttackMs * 0.001 * sr)));
     gainRelCoeff_ = static_cast<float> (1.0 - std::exp (-1.0 / (kGainReleaseMs * 0.001 * sr)));
+    gApplySmoothCoeff_ = static_cast<float> (1.0 - std::exp (-1.0 / (kGApplySmoothMs * 0.001 * sr)));
 
     reset();
     eqCoeffsDirty_ = true;
@@ -49,7 +90,8 @@ void MixBusStage::reset()
     midR_.reset();
     hiR_.reset();
     env_ = 0.0f;
-    smoothGainLin_ = 1.0f;
+    smoothGainLin_     = 1.0f;
+    gApplySmoothed_    = 1.0f;
     compReductionMeter01_ = 0.0f;
 }
 
@@ -139,17 +181,22 @@ void MixBusStage::process (float* left, float* right, int numSamples)
 
     const float thrDb = map::mixCompThresholdDb (compThr01_);
     const bool  compOff = (compMk01_ <= 1.0e-4f) && (thrDb >= 1.5f);
-    const float mkLin   = compOff ? 1.0f : dbToGain (map::mixCompMakeupDb (compMk01_));
+    // Makeup is applied in dB with reduction; see netDb below (not a separate linear multiply).
+    const float makeupDb = compOff ? 0.0f : map::mixCompMakeupDb (compMk01_);
 
     if (eqOff && compOff)
     {
-        smoothGainLin_        = 1.0f;
+        smoothGainLin_  = 1.0f;
+        gApplySmoothed_ = 1.0f;
         compReductionMeter01_ *= 0.9f;
         return;
     }
 
     if (compOff)
-        smoothGainLin_ = 1.0f;
+    {
+        smoothGainLin_  = 1.0f;
+        gApplySmoothed_ = 1.0f;
+    }
 
     float peakReductionDb = 0.0f;
 
@@ -169,15 +216,20 @@ void MixBusStage::process (float* left, float* right, int numSamples)
             r = hiR_.process (r);
         }
 
+        const float pk = std::max (std::fabs (l), std::fabs (r));
+        const float pkEps = std::max (pk, 1.0e-8f);
+
         if (compOff)
         {
             smoothGainLin_ = 1.0f;
-            left[i]        = clampf (sanitize (l), -1.0f, 1.0f);
-            right[i]       = clampf (sanitize (r), -1.0f, 1.0f);
+            constexpr float kWetCeilBypass = 0.91f;
+            const float     gBypass        = std::min (1.0f, kWetCeilBypass / pkEps);
+            left[i]  = softLimitStereoBus (sanitize (l * gBypass));
+            right[i] = softLimitStereoBus (sanitize (r * gBypass));
             continue;
         }
 
-        const float pk = std::max (std::fabs (l), std::fabs (r));
+        const float detForGain = controlPeak (pk, env_);
 
         if (pk > env_)
             env_ = pk + attCoeff_ * (env_ - pk);
@@ -186,29 +238,33 @@ void MixBusStage::process (float* left, float* right, int numSamples)
 
         env_ = sanitize (env_);
 
-        const float envDb = 20.0f * std::log10 (std::max (env_, 1.0e-10f));
-        float       grDb  = 0.0f;
-        if (envDb > thrDb)
-        {
-            const float over = envDb - thrDb;
-            grDb = -over * (1.0f - 1.0f / kCompRatio);
-        }
-        grDb = std::min (0.0f, grDb);
+        const float envDb = 20.0f * std::log10 (std::max (detForGain, 1.0e-10f));
+        const float grDb  = compReductionDbSoftKnee (envDb, thrDb, kCompRatio, kCompKneeDb);
 
-        const float targetLin = dbToGain (grDb) * mkLin;
+        // Net gain in dB: with GR, cap net boost at 0 dB vs (GR + makeup). With no GR, makeup is plain gain.
+        const float netDb = (grDb >= 0.0f) ? makeupDb : std::min (0.0f, grDb + makeupDb);
+        const float targetLin = dbToGain (netDb);
         if (targetLin < smoothGainLin_)
-            smoothGainLin_ = targetLin;
+            smoothGainLin_ += gainAttCoeff_ * (targetLin - smoothGainLin_);
         else
             smoothGainLin_ += gainRelCoeff_ * (targetLin - smoothGainLin_);
 
         if (grDb < 0.0f)
             peakReductionDb = std::max (peakReductionDb, -grDb);
 
-        left[i]  = clampf (sanitize (l * smoothGainLin_), -1.0f, 1.0f);
-        right[i] = clampf (sanitize (r * smoothGainLin_), -1.0f, 1.0f);
+        // EQ peaking + hot material can exceed ±1 before gain. Ceiling uses instantaneous pk;
+        // gApply is smoothed toward that target then clamped to avoid zipper without sustained ducking.
+        constexpr float kWetCeil   = 0.91f;
+        const float     gCeilCap   = kWetCeil / pkEps;
+        const float     gTarget    = std::min (smoothGainLin_, gCeilCap);
+        gApplySmoothed_ += gApplySmoothCoeff_ * (gTarget - gApplySmoothed_);
+        const float     gApply     = std::min (gApplySmoothed_, gCeilCap);
+
+        left[i]  = softLimitStereoBus (sanitize (l * gApply));
+        right[i] = softLimitStereoBus (sanitize (r * gApply));
     }
 
-    const float instant = clamp01 (peakReductionDb / 18.0f);
+    const float instant = clamp01 (peakReductionDb / 22.0f);
     compReductionMeter01_ = compReductionMeter01_ * 0.82f + instant * 0.18f;
 }
 

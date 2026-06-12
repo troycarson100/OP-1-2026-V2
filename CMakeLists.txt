@@ -98,3 +98,22 @@ target_link_libraries(SculptSampler
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+option(SCULPT_BUILD_TESTS "Build portable engine unit tests" OFF)
+
+if(SCULPT_BUILD_TESTS)
+    enable_testing()
+    add_executable(sculpt_granular_pattern_tests
+        tests/GranularPatternTests.cpp
+        Source/audio/GranularEngine.cpp
+        Source/audio/GrainPool.cpp
+        Source/audio/GrainVoice.cpp
+        Source/audio/SampleBuffer.cpp)
+    target_include_directories(sculpt_granular_pattern_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/audio
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/core
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
+    target_compile_features(sculpt_granular_pattern_tests PRIVATE cxx_std_17)
+    add_test(NAME sculpt_granular_pattern COMMAND sculpt_granular_pattern_tests)
+endif()
