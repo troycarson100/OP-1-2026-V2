@@ -48,6 +48,11 @@ struct ScreenModel
     float  displayBpm = 120.0f;
     bool   bpmValid   = true;
 
+    // Selected track: MaterialTimeMode 0..1 (>0.5 = Warp). Used for Tape Speed LCD readout.
+    float selectedTrackMaterialTimeMode01 = 0.0f;
+    // Selected track: TapeSpeedSnap (quantized tape speed knob). Not on the 8-slot LCD row.
+    float selectedTrackTapeSpeedSnap01 = 0.0f;
+
     // Selected track tape loop region (normalized, same as tape uses) for Material LCD.
     float materialLoopStart01 = 0.0f;
     float materialLoopEnd01   = 1.0f;

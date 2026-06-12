@@ -9,10 +9,10 @@ namespace
 
     constexpr ParameterId kPageParams[static_cast<int> (Page::Count)][kMaxParamsPerPage] =
     {
-        // Material
-        { ParameterId::MaterialLevel, ParameterId::TapeSpeed, ParameterId::LoopStart,
-          ParameterId::LoopEnd, ParameterId::CaptureArm, ParameterId::MaterialPlayhead,
-          ParameterId::MaterialWaveZoom, kEmpty },
+        // Material: TimeMode + RootBpm replace Wave Zoom on the LCD row (zoom remains in APVTS / editor).
+        { ParameterId::MaterialLevel, ParameterId::TapeSpeed, ParameterId::MaterialTimeMode,
+          ParameterId::SampleRootBpm, ParameterId::LoopStart, ParameterId::LoopEnd,
+          ParameterId::CaptureArm, ParameterId::MaterialPlayhead },
         // Granular
         { ParameterId::GrainPosition, ParameterId::GrainSize, ParameterId::GrainDensity,
           ParameterId::GrainPitch, ParameterId::GrainSpray, ParameterId::GrainTexture,

@@ -1,8 +1,10 @@
 #include "Engine.h"
+#include "../audio/WarpLaunchSync.h"
 #include "../util/MathUtils.h"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace sculpt
 {
@@ -39,7 +41,11 @@ namespace
     }
 } // namespace
 
-Engine::Engine() = default;
+Engine::Engine()
+{
+    for (auto& v : warpSpeedForResyncCompare_)
+        v = std::numeric_limits<float>::quiet_NaN();
+}
 
 void Engine::prepare (double sampleRate, int blockSize)
 {
@@ -72,6 +78,9 @@ void Engine::reset()
     clock_.reset();
     for (auto& track : tracks_)
         track.reset();
+    warpLaunchPending_.fill (false);
+    for (auto& v : warpSpeedForResyncCompare_)
+        v = std::numeric_limits<float>::quiet_NaN();
     for (auto& scrub : materialPlayheadScrubActive_)
         scrub.store (false, std::memory_order_relaxed);
     inputEnvelope_.reset();
@@ -165,6 +174,182 @@ void Engine::recallScene (int sceneIndex)
     pendingSceneRecall_.store (sceneIndex);
 }
 
+bool Engine::trackIsWarpMode (int trackIndex) const
+{
+    return params_.effective (trackIndex, ParameterId::MaterialTimeMode) > 0.5f;
+}
+
+int Engine::findReferenceWarpPlayingTrack (int excludeTrack) const
+{
+    for (int r = 0; r < kNumTracks; ++r)
+    {
+        if (r == excludeTrack)
+            continue;
+        const auto rs = static_cast<size_t> (r);
+        if (! tracks_[rs].isPlaying())
+            continue;
+        if (! trackIsWarpMode (r))
+            continue;
+        return r;
+    }
+    return -1;
+}
+
+float Engine::warpEffectiveSpeedRatio (int trackIndex) const
+{
+    const double hostBpm = clock_.getBpm();
+    float        rootBpm = map::sampleRootBpm (params_.effective (trackIndex, ParameterId::SampleRootBpm));
+    if (rootBpm < 1.0e-3f)
+        rootBpm = 120.0f;
+    const float tapeKnob = params_.effective (trackIndex, ParameterId::TapeSpeed);
+    const bool  snapOn   = params_.effective (trackIndex, ParameterId::TapeSpeedSnap) > 0.5f;
+    return warpLaunchSync::warpTapeSpeedRatio (tapeKnob, snapOn, rootBpm, hostBpm);
+}
+
+void Engine::maybeResyncWarpPlayheadsAfterVarispeedChange (double beatNow)
+{
+    constexpr float nanV = std::numeric_limits<float>::quiet_NaN();
+    const auto      prevSnap = warpSpeedForResyncCompare_;
+
+    const double hostBpm = clock_.getBpm();
+
+    std::array<float, kNumTracks> speedNow {};
+    for (int t = 0; t < kNumTracks; ++t)
+    {
+        const auto ts = static_cast<size_t> (t);
+        if (tracks_[ts].isPlaying() && trackIsWarpMode (t))
+            speedNow[ts] = warpEffectiveSpeedRatio (t);
+        else
+            speedNow[ts] = nanV;
+    }
+
+    for (int t = 0; t < kNumTracks; ++t)
+    {
+        const auto ts = static_cast<size_t> (t);
+        Track&     trk = tracks_[ts];
+
+        if (! trk.isPlaying() || ! trackIsWarpMode (t))
+        {
+            warpSpeedForResyncCompare_[ts] = nanV;
+            continue;
+        }
+
+        const float sNow = speedNow[ts];
+        const float prev = prevSnap[ts];
+
+        const float mag       = std::max (1.0e-6f, std::fabs (sNow));
+        const float threshold = std::max (5.0e-4f, 0.002f * mag);
+
+        bool refSpeedChanged = false;
+        const int ref        = findReferenceWarpPlayingTrack (t);
+        if (ref >= 0)
+        {
+            const auto rs    = static_cast<size_t> (ref);
+            const float sRef = speedNow[rs];
+            const float pRef = prevSnap[rs];
+            if (! std::isnan (sRef) && ! std::isnan (pRef))
+            {
+                const float magR       = std::max (1.0e-6f, std::fabs (sRef));
+                const float thresholdR = std::max (5.0e-4f, 0.002f * magR);
+                refSpeedChanged        = std::fabs (sRef - pRef) > thresholdR;
+            }
+        }
+
+        const bool selfChanged
+            = (! std::isnan (prev)) && (std::fabs (sNow - prev) > threshold);
+
+        if (! selfChanged && ! refSpeedChanged)
+        {
+            warpSpeedForResyncCompare_[ts] = sNow;
+            continue;
+        }
+
+        float rootBpm = map::sampleRootBpm (params_.effective (t, ParameterId::SampleRootBpm));
+        if (rootBpm < 1.0e-3f)
+            rootBpm = 120.0f;
+        const double bpmForWarp = (hostBpm > 1.0 && hostBpm < 999.0) ? hostBpm : static_cast<double> (rootBpm);
+
+        const float loopS  = params_.effective (t, ParameterId::LoopStart);
+        const float loopE  = params_.effective (t, ParameterId::LoopEnd);
+        const int   frames = trk.getMaterial().getBuffer().getNumFrames();
+
+        float ph01;
+        if (ref >= 0)
+        {
+            const auto rs = static_cast<size_t> (ref);
+            ph01 = warpLaunchSync::materialPlayheadForRefPhase (
+                tracks_[rs].getTapePositionNormalized(),
+                params_.effective (ref, ParameterId::LoopStart),
+                params_.effective (ref, ParameterId::LoopEnd),
+                loopS, loopE);
+        }
+        else
+        {
+            ph01 = warpLaunchSync::materialPlayheadForBeatPhase (beatNow, frames, loopS, loopE, sampleRate_,
+                                                              sNow, bpmForWarp);
+        }
+
+        trk.getEngine().getTape().seekNormalized (ph01, frames, loopS, loopE);
+        warpSpeedForResyncCompare_[ts] = sNow;
+    }
+}
+
+void Engine::executeWarpLaunchForTrack (int trackIndex, double targetHostBeat)
+{
+    const auto ts = static_cast<size_t> (trackIndex);
+    warpLaunchPending_[ts] = false;
+
+    if (! trackIsWarpMode (trackIndex))
+    {
+        tracks_[ts].trigger();
+        return;
+    }
+
+    Track&       trk      = tracks_[ts];
+    const double hostBpm = clock_.getBpm();
+    const float  loopS   = params_.effective (trackIndex, ParameterId::LoopStart);
+    const float  loopE   = params_.effective (trackIndex, ParameterId::LoopEnd);
+    const int    frames  = trk.getMaterial().getBuffer().getNumFrames();
+    float        rootBpm = map::sampleRootBpm (params_.effective (trackIndex, ParameterId::SampleRootBpm));
+    if (rootBpm < 1.0e-3f)
+        rootBpm = 120.0f;
+
+    const double bpmForWarp = (hostBpm > 1.0 && hostBpm < 999.0) ? hostBpm : static_cast<double> (rootBpm);
+    const float  speed      = warpEffectiveSpeedRatio (trackIndex);
+
+    const int ref = findReferenceWarpPlayingTrack (trackIndex);
+    float     ph01;
+    if (ref >= 0)
+    {
+        const auto rs = static_cast<size_t> (ref);
+        ph01 = warpLaunchSync::materialPlayheadForRefPhase (
+            tracks_[rs].getTapePositionNormalized(),
+            params_.effective (ref, ParameterId::LoopStart),
+            params_.effective (ref, ParameterId::LoopEnd),
+            loopS, loopE);
+    }
+    else
+    {
+        ph01 = warpLaunchSync::materialPlayheadForBeatPhase (targetHostBeat, frames, loopS, loopE, sampleRate_,
+                                                              speed, bpmForWarp);
+    }
+
+    trk.triggerWithWarpPlayhead (ph01, loopS, loopE);
+    warpSpeedForResyncCompare_[ts] = speed;
+}
+
+void Engine::fireWarpLaunchDeadlines (double beatAtBlockStart)
+{
+    for (int t = 0; t < kNumTracks; ++t)
+    {
+        const auto ts = static_cast<size_t> (t);
+        if (! warpLaunchPending_[ts])
+            continue;
+        if (beatAtBlockStart + 1.0e-4 >= warpLaunchTargetBeat_[ts])
+            executeWarpLaunchForTrack (t, warpLaunchTargetBeat_[ts]);
+    }
+}
+
 void Engine::applyPendingRequests()
 {
     const uint32_t triggers = pendingTriggers_.exchange (0);
@@ -172,10 +357,40 @@ void Engine::applyPendingRequests()
 
     for (int t = 0; t < kNumTracks; ++t)
     {
-        if (triggers & (1u << t))
-            tracks_[static_cast<size_t> (t)].trigger();
+        const auto ts = static_cast<size_t> (t);
         if (stops & (1u << t))
-            tracks_[static_cast<size_t> (t)].stop();
+        {
+            warpLaunchPending_[ts] = false;
+            warpSpeedForResyncCompare_[ts] = std::numeric_limits<float>::quiet_NaN();
+            tracks_[ts].stop();
+        }
+    }
+
+    for (int t = 0; t < kNumTracks; ++t)
+    {
+        if (! (triggers & (1u << t)))
+            continue;
+
+        const auto ts = static_cast<size_t> (t);
+        if (! trackIsWarpMode (t))
+        {
+            warpLaunchPending_[ts] = false;
+            tracks_[ts].trigger();
+            continue;
+        }
+
+        const double beat = clock_.getBeatPosition();
+        const double qb   = warpLaunchSync::warpLaunchQuantizedBeat (beat);
+        if (warpLaunchSync::warpLaunchIsImmediate (beat, qb))
+        {
+            warpLaunchPending_[ts] = false;
+            executeWarpLaunchForTrack (t, qb);
+        }
+        else
+        {
+            warpLaunchPending_[ts]     = true;
+            warpLaunchTargetBeat_[ts] = qb;
+        }
     }
 
     const int save = pendingSceneSave_.exchange (-1);
@@ -286,7 +501,11 @@ void Engine::processChunk (float** inputs, float** outputs,
 {
     lastBusChunkSamples_ = numSamples;
 
-    const double beatAtBlockStart = clock_.getBeatPosition();
+    const double beatForTiming = clock_.getBeatPosition();
+    fireWarpLaunchDeadlines (beatForTiming);
+    maybeResyncWarpPlayheadsAfterVarispeedChange (beatForTiming);
+
+    const double beatAtBlockStart = beatForTiming;
     updateModulation (inputs, numInputChannels, offset, numSamples, beatAtBlockStart);
     clock_.advance (numSamples);
 
@@ -311,7 +530,7 @@ void Engine::processChunk (float** inputs, float** outputs,
         auto& track = tracks_[ts];
 
         const bool playheadScrub = materialPlayheadScrubActive_[ts].load (std::memory_order_relaxed);
-        track.updateParameters (params_, t, playheadScrub);
+        track.updateParameters (params_, t, playheadScrub, clock_.getBpm());
         track.process (busL_[ts].data(), busR_[ts].data(), numSamples);
 
         float peak = trackPeaks_[ts] * 0.92f;
@@ -381,6 +600,11 @@ void Engine::updateScreenModel()
         screen_.macroValues[static_cast<size_t> (m)] = macros_.getMacro (m);
 
     const int selected = screen_.selectedTrack;
+    screen_.selectedTrackMaterialTimeMode01 =
+        params_.effective (selected, ParameterId::MaterialTimeMode);
+    screen_.selectedTrackTapeSpeedSnap01 =
+        params_.effective (selected, ParameterId::TapeSpeedSnap);
+
     const auto& matBuf = getTrackMaterialBuffer (selected);
     tracks_[static_cast<size_t> (selected)].getEngine().getGranular().fillGrainDisplay (
         matBuf, screen_.grainDisplay.data(), kGrainsPerTrack);

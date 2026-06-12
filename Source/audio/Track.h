@@ -20,6 +20,8 @@ public:
     void reset();
 
     void trigger();
+    // Warp launch: seek material playhead into the loop then start (same as trigger() otherwise).
+    void triggerWithWarpPlayhead (float materialPlayhead01, float loopStart01, float loopEnd01);
     void stop();
     bool isPlaying() const { return playing_; }
 
@@ -30,7 +32,9 @@ public:
 
     // Sync all per-track parameters (with modulation applied) into the DSP.
     // When materialPlayheadScrub is true, MaterialPlayhead re-seeks tape even if the track is playing.
-    void updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub);
+    // hostBpm: transport / manual BPM from Clock (Warp mode only).
+    void updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub,
+                           double hostBpm);
 
     // Overwrites outL/outR with this track's output.
     void process (float* outL, float* outR, int numSamples);

@@ -72,6 +72,14 @@ enum class ParameterId : int
     // Material: manual tape playhead 0..1 (loop-clamped). Applied while stopped; zoom centers on this when not playing.
     MaterialPlayhead,
 
+    // <=0.5 = tape-style speed (TapeSpeed knob); >0.5 = warp to host BPM using SampleRootBpm.
+    MaterialTimeMode,
+    // Musical BPM of the loaded loop before tempo warp (used in Warp mode only).
+    SampleRootBpm,
+
+    // When on, Tape Speed knob is quantized to 0, 0.25, 0.5, 0.75, 1 (normalized) for that track.
+    TapeSpeedSnap,
+
     Count
 };
 
@@ -130,6 +138,9 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MixCompMakeup:    return 0.0f;  // unity makeup until dialed in
         case ParameterId::MaterialWaveZoom: return 0.0f;   // full waveform
         case ParameterId::MaterialPlayhead: return 0.0f;   // start of material
+        case ParameterId::MaterialTimeMode: return 0.0f;   // tape mode
+        case ParameterId::SampleRootBpm:   return 0.4f;    // ~120 BPM (40 + 0.4*200)
+        case ParameterId::TapeSpeedSnap:   return 0.0f;   // off
         default:                           return 0.0f;
     }
 }
@@ -154,6 +165,31 @@ namespace map
     {
         const int x = static_cast<int> (std::lround ((clamp01 (n) - 0.5f) * 200.0f));
         return std::clamp (x, -100, 100);
+    }
+
+    // Warp mode: sample's original BPM (40 .. 240) from normalized knob.
+    inline float sampleRootBpm (float n)
+    {
+        return 40.0f + clamp01 (n) * 200.0f;
+    }
+
+    // Warp mode only: varispeed multiplier around unity. n=0.5 -> 1.0; ends ~0.25x .. 4x.
+    inline float warpVarispeedMultiplier (float n)
+    {
+        return std::pow (4.0f, 2.0f * (clamp01 (n) - 0.5f));
+    }
+
+    // Snap grid for normalized tape speed (0, 0.25, 0.5, 0.75, 1) — Tape mode only.
+    inline float quantizeNormalizedQuarter (float n)
+    {
+        return std::round (clamp01 (n) * 4.0f) / 4.0f;
+    }
+
+    // Warp varispeed multiplier: snap to 0.25 steps (e.g. 1.0, 1.25, 1.5 …), clamp to curve range.
+    inline float quantizeWarpVarispeedMultiplier (float m)
+    {
+        const float q = std::round (m / 0.25f) * 0.25f;
+        return std::clamp (q, 0.25f, 4.0f);
     }
 
     // Grain length in seconds (normalized knob). Quadratic taper; max was 500 ms, now ~2 s (4x).
@@ -237,6 +273,9 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MixCompMakeup:   return "Mix Comp Gain";
         case ParameterId::MaterialWaveZoom: return "Wave Zoom";
         case ParameterId::MaterialPlayhead: return "Playhead";
+        case ParameterId::MaterialTimeMode: return "Time Mode";
+        case ParameterId::SampleRootBpm:   return "Root BPM";
+        case ParameterId::TapeSpeedSnap:   return "Snap 1/4";
         default:                           return "Unknown";
     }
 }

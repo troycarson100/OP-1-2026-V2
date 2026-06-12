@@ -223,6 +223,24 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
             control.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                 apvts, paramId, *control.slider);
 
+        if (id == sculpt::ParameterId::TapeSpeed && currentPage_ == sculpt::Page::Material)
+        {
+            control.tapeSnapToggle = std::make_unique<juce::ToggleButton>();
+            control.tapeSnapToggle->setButtonText ({});
+            control.tapeSnapToggle->setClickingTogglesState (true);
+            control.tapeSnapToggle->setTooltip (
+                "Tape mode: snap knob to 0/0.25/0.5/0.75/1. Warp mode: snap varispeed to 0.25x steps (1.0x, 1.25x, …).");
+            control.tapeSnapToggle->setColour (juce::ToggleButton::tickColourId, sculpt_editor::kAccent);
+            control.tapeSnapToggle->setColour (juce::ToggleButton::tickDisabledColourId,
+                                               sculpt_editor::kText.withAlpha (0.4f));
+            addAndMakeVisible (*control.tapeSnapToggle);
+            const auto snapPid = bridge::paramIdString (track, sculpt::ParameterId::TapeSpeedSnap);
+            if (apvts.getParameter (snapPid) != nullptr)
+                control.tapeSnapAttachment =
+                    std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+                        apvts, snapPid, *control.tapeSnapToggle);
+        }
+
         pageControls_.push_back (std::move (control));
     }
 }
@@ -359,6 +377,15 @@ void SculptSamplerAudioProcessorEditor::resized()
         cell = cell.reduced (8);
         pageControls_[i].label->setBounds (cell.removeFromBottom (16));
         pageControls_[i].slider->setBounds (cell);
+        if (pageControls_[i].tapeSnapToggle != nullptr)
+        {
+            constexpr int sq        = 12;
+            constexpr int marginR   = 10; // keep inside cell; column edge was clipping the right side
+            constexpr int marginTop = 3;
+            const int     x         = cell.getRight() - sq - marginR;
+            pageControls_[i].tapeSnapToggle->setBounds (x, cell.getY() + marginTop, sq, sq);
+            pageControls_[i].tapeSnapToggle->toFront (false);
+        }
     }
 }
 

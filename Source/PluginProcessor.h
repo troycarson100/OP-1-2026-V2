@@ -68,6 +68,9 @@ namespace bridge
             case P::MixCompMakeup:   suffix = "mixCompMakeup"; break;
             case P::MaterialWaveZoom: suffix = "materialWaveZoom"; break;
             case P::MaterialPlayhead: suffix = "materialPlayhead"; break;
+            case P::MaterialTimeMode: suffix = "materialTimeMode"; break;
+            case P::SampleRootBpm:   suffix = "sampleRootBpm"; break;
+            case P::TapeSpeedSnap: suffix = "tapeSpeedSnap"; break;
             default: break;
         }
 

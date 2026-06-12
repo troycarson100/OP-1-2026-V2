@@ -60,6 +60,8 @@ private:
     {
         std::unique_ptr<juce::Slider> slider;
         std::unique_ptr<juce::Label>  label;
+        std::unique_ptr<juce::ToggleButton> tapeSnapToggle; // Material page + Tape Speed only
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> tapeSnapAttachment;
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
     };
     std::vector<PageControl> pageControls_;

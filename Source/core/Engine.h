@@ -92,6 +92,12 @@ private:
     float materialWaveCenter01 (int trackIndex) const;
 
     void applyPendingRequests();
+    void fireWarpLaunchDeadlines (double beatAtBlockStart);
+    void executeWarpLaunchForTrack (int trackIndex, double targetHostBeat);
+    void maybeResyncWarpPlayheadsAfterVarispeedChange (double beatNow);
+    float warpEffectiveSpeedRatio (int trackIndex) const;
+    bool trackIsWarpMode (int trackIndex) const;
+    int  findReferenceWarpPlayingTrack (int excludeTrack) const;
     void updateModulation (float** inputs, int numInputChannels, int offset, int numSamples,
                            double beatAtBlockStart);
     void processChunk (float** inputs, float** outputs,
@@ -125,6 +131,12 @@ private:
 
     // True while the Material playhead control is in an active change gesture (scrub).
     std::array<std::atomic<bool>, kNumTracks> materialPlayheadScrubActive_ {};
+
+    // Warp mode: quantize PLAY to the next host beat; align loop phase to another playing warp track when present.
+    std::array<bool, kNumTracks>   warpLaunchPending_{};
+    std::array<double, kNumTracks> warpLaunchTargetBeat_{};
+    // Last-processed warp tape speed ratio per track (NaN = idle). Used to detect varispeed edits while playing.
+    std::array<float, kNumTracks> warpSpeedForResyncCompare_{};
 
     // Latched cross-thread requests (bitmask per track / scene index).
     std::atomic<uint32_t> pendingTriggers_ { 0 };

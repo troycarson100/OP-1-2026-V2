@@ -295,7 +295,29 @@ namespace
             drawOneTrackMeter (g, meterArea.removeFromTop (rowHeight), screen, t);
         drawMasterMeter (g, meterArea.removeFromTop (rowHeight), screen);
     }
-    juce::String formatParamCellValue (sculpt::ParameterId id, float v)
+    // Warp tape readout: must match the Time Mode cell on the Material row (slot 2). Scan + engine
+    // hint are fallbacks for any future layout change.
+    float materialWarpKnob01ForTapeReadout (const sculpt::ScreenModel& screen)
+    {
+        constexpr int kMaterialTimeModeSlot = 2;
+        if (screen.selectedPage == sculpt::Page::Material
+            && screen.numVisibleParams > kMaterialTimeModeSlot
+            && sculpt::PageModel::parameterForSlot (sculpt::Page::Material, kMaterialTimeModeSlot)
+                   == sculpt::ParameterId::MaterialTimeMode
+            && screen.paramIds[static_cast<size_t> (kMaterialTimeModeSlot)]
+                   == sculpt::ParameterId::MaterialTimeMode)
+            return screen.paramValues[static_cast<size_t> (kMaterialTimeModeSlot)];
+
+        for (int s = 0; s < screen.numVisibleParams; ++s)
+        {
+            if (screen.paramIds[static_cast<size_t> (s)] == sculpt::ParameterId::MaterialTimeMode)
+                return screen.paramValues[static_cast<size_t> (s)];
+        }
+        return screen.selectedTrackMaterialTimeMode01;
+    }
+
+    juce::String formatParamCellValue (sculpt::ParameterId id, float v,
+                                      const sculpt::ScreenModel& screen)
     {
         using P = sculpt::ParameterId;
         switch (id)
@@ -307,7 +329,23 @@ namespace
             case P::FilterMode:
                 return (v > 0.5f) ? "Ring" : "LP/BP/HP";
             case P::TapeSpeed:
-                return juce::String (sculpt::map::tapeSpeedDisplay (v));
+            {
+                const bool snap = screen.selectedTrackTapeSpeedSnap01 > 0.5f;
+                if (materialWarpKnob01ForTapeReadout (screen) > 0.5f)
+                {
+                    float m = sculpt::map::warpVarispeedMultiplier (v);
+                    if (snap)
+                        m = sculpt::map::quantizeWarpVarispeedMultiplier (m);
+                    const bool rev = (v < 0.48f);
+                    return juce::String::formatted ("%s%.2fx", rev ? "-" : "", (double) m);
+                }
+                const float vDisp = snap ? sculpt::map::quantizeNormalizedQuarter (v) : v;
+                return juce::String (sculpt::map::tapeSpeedDisplay (vDisp));
+            }
+            case P::MaterialTimeMode:
+                return (v > 0.5f) ? "Warp" : "Tape";
+            case P::SampleRootBpm:
+                return juce::String (sculpt::map::sampleRootBpm (v), 1);
             default:
                 return juce::String (v, 3);
         }
@@ -356,7 +394,7 @@ namespace
             g.setColour (kAccent);
             g.setFont (juce::FontOptions (12.0f));
             const auto pid = screen.paramIds[ps];
-            g.drawText (formatParamCellValue (pid, v), valueArea, juce::Justification::centred, true);
+            g.drawText (formatParamCellValue (pid, v, screen), valueArea, juce::Justification::centred, true);
 
             if (showMod)
             {
@@ -673,6 +711,10 @@ void InstrumentPanel::paint (juce::Graphics& g)
         return;
 
     const auto& screen = screenProvider_();
+    // Param grid uses engine `selectedPage` (audio thread). Match waveform + header to that page so
+    // labels and Tape/Warp readouts line up with the visible cells.
+    const sculpt::Page lcdPage = screen.selectedPage;
+
     auto inner = getLocalBounds().reduced (6).toFloat();
 
     g.setColour (kPanel);
@@ -688,17 +730,17 @@ void InstrumentPanel::paint (juce::Graphics& g)
     auto leftHdr = headerStrip.removeFromLeft (juce::jmax (0, headerStrip.getWidth() - bpmW));
     const juce::String header = "TRK " + juce::String (screen.selectedTrack + 1)
                                + "   SCENE " + juce::String::charToString (juce::juce_wchar ('A' + screen.currentScene))
-                               + "   " + juce::String (sculpt::PageModel::pageName (uiPage_)).toUpperCase();
+                               + "   " + juce::String (sculpt::PageModel::pageName (lcdPage)).toUpperCase();
     g.drawText (header, leftHdr, juce::Justification::centredLeft);
     g.setColour (screen.bpmValid ? kAccent : kText.withAlpha (0.55f));
     const juce::String bpmTxt = juce::String (screen.displayBpm, 1) + " BPM";
     g.drawText (bpmTxt, headerStrip, juce::Justification::centredRight);
     g.setColour (kText);
 
-    const bool materialPage = (uiPage_ == sculpt::Page::Material);
-    const bool granularPage = (uiPage_ == sculpt::Page::Granular);
-    const bool filterPage   = (uiPage_ == sculpt::Page::Filter);
-    const bool modPage      = (uiPage_ == sculpt::Page::Mod);
+    const bool materialPage = (lcdPage == sculpt::Page::Material);
+    const bool granularPage = (lcdPage == sculpt::Page::Granular);
+    const bool filterPage   = (lcdPage == sculpt::Page::Filter);
+    const bool modPage      = (lcdPage == sculpt::Page::Mod);
     // Prefer editor page; also treat engine-reported page as Mixer so the LCD never falls through
     // to the 4-track meter stack if message-thread vs audio-thread page state tears briefly.
     const bool mixerLcd     = (uiPage_ == sculpt::Page::Mixer)

@@ -4,6 +4,9 @@
 #include "../core/FilterScales.h"
 #include "../util/Constants.h"
 
+#include <algorithm>
+#include <cmath>
+
 namespace sculpt
 {
 
@@ -46,6 +49,19 @@ void Track::trigger()
     gate_.gateOn();
 }
 
+void Track::triggerWithWarpPlayhead (float materialPlayhead01, float loopStart01, float loopEnd01)
+{
+    playing_                   = true;
+    ignoreStoppedPlayheadSeek_ = false;
+    auto& tape = engine_.getTape();
+    tape.stop();
+    const int matFrames = material_.getBuffer().getNumFrames();
+    tape.seekNormalized (materialPlayhead01, matFrames, loopStart01, loopEnd01);
+    tape.start();
+    engine_.getGranular().setActive (true);
+    gate_.gateOn();
+}
+
 void Track::stop()
 {
     playing_                   = false;
@@ -76,7 +92,8 @@ void Track::replaceMaterialStereo (const float* left, const float* right, int nu
     ignoreStoppedPlayheadSeek_ = false;
 }
 
-void Track::updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub)
+void Track::updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub,
+                              double hostBpm)
 {
     const int t = trackIndex;
     auto get = [&state, t] (ParameterId id) { return state.effective (t, id); };
@@ -86,7 +103,36 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     engine_.setMaterialLevel (get (ParameterId::MaterialLevel));
 
     auto& tape = engine_.getTape();
-    tape.setSpeedRatio (map::tapeSpeedRatio (get (ParameterId::TapeSpeed)));
+    const float tapeKnobRaw = get (ParameterId::TapeSpeed);
+    const bool  snapOn      = get (ParameterId::TapeSpeedSnap) > 0.5f;
+
+    float speedRatio = 0.0f;
+    if (get (ParameterId::MaterialTimeMode) > 0.5f)
+    {
+        float rootBpm = map::sampleRootBpm (get (ParameterId::SampleRootBpm));
+        if (rootBpm < 1.0e-3f)
+            rootBpm = 120.0f;
+
+        double hb = hostBpm;
+        if (! (hb > 1.0 && hb < 999.0))
+            hb = static_cast<double> (rootBpm);
+
+        float sync = static_cast<float> (hb / static_cast<double> (rootBpm));
+        sync         = std::clamp (sync, 0.1f, 10.0f);
+        float varis  = map::warpVarispeedMultiplier (tapeKnobRaw);
+        if (snapOn)
+            varis = map::quantizeWarpVarispeedMultiplier (varis);
+        const float sign = (tapeKnobRaw < 0.48f) ? -1.0f : 1.0f;
+        speedRatio       = sign * sync * varis;
+    }
+    else
+    {
+        float tapeKnob = tapeKnobRaw;
+        if (snapOn)
+            tapeKnob = map::quantizeNormalizedQuarter (tapeKnob);
+        speedRatio = map::tapeSpeedRatio (tapeKnob);
+    }
+    tape.setSpeedRatio (speedRatio);
     tape.setLoopRegion (get (ParameterId::LoopStart), get (ParameterId::LoopEnd));
     tape.setLevel (1.0f);
 

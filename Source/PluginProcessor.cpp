@@ -131,6 +131,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
                     addChoiceParam (layout, pid, pname, keyChoices, id);
                 else if (id == ParameterId::FilterMode)
                     addChoiceParam (layout, pid, pname, modeChoices, id);
+                else if (id == ParameterId::TapeSpeedSnap)
+                    layout.add (std::make_unique<juce::AudioParameterBool> (
+                        juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
                 else
                     addParam (pid, pname, parameterDefault (id));
             }
