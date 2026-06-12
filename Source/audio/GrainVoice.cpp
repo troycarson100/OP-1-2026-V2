@@ -35,7 +35,7 @@ void GrainVoice::render (const SampleBuffer& buffer, float* outL, float* outR, i
 
     const int rightChannel = buffer.getNumChannels() > 1 ? 1 : 0;
     const float windowStep = kTwoPi / static_cast<float> (length_);
-    const int attackLen    = std::max (8, static_cast<int> (std::ceil (0.05f * static_cast<float> (length_))));
+    const int attackLen    = std::max (8, static_cast<int> (std::ceil (0.025f * static_cast<float> (length_))));
 
     for (int i = 0; i < numSamples; ++i)
     {

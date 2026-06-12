@@ -68,6 +68,32 @@ SculptSamplerAudioProcessor::SculptSamplerAudioProcessor()
     buildParameterLinks();
 }
 
+SculptSamplerAudioProcessor::~SculptSamplerAudioProcessor()
+{
+    for (const auto& link : links_)
+        if (link.id == sculpt::ParameterId::MaterialPlayhead && link.parameter != nullptr)
+            link.parameter->removeListener (this);
+}
+
+void SculptSamplerAudioProcessor::parameterValueChanged (int parameterIndex, float newValue)
+{
+    juce::ignoreUnused (parameterIndex, newValue);
+}
+
+void SculptSamplerAudioProcessor::parameterGestureChanged (int parameterIndex, bool gestureIsStarting)
+{
+    using P = sculpt::ParameterId;
+    for (const auto& link : links_)
+    {
+        if (link.id != P::MaterialPlayhead || link.track < 0 || link.parameter == nullptr)
+            continue;
+        if (link.parameter->getParameterIndex() != parameterIndex)
+            continue;
+        engine_.setMaterialPlayheadScrubActive (link.track, gestureIsStarting);
+        return;
+    }
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor::createParameterLayout()
 {
     using namespace sculpt;
@@ -135,6 +161,10 @@ void SculptSamplerAudioProcessor::buildParameterLinks()
                     links_.push_back ({ p, t, id });
         }
     }
+
+    for (const auto& link : links_)
+        if (link.id == ParameterId::MaterialPlayhead && link.parameter != nullptr)
+            link.parameter->addListener (this);
 }
 
 void SculptSamplerAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)

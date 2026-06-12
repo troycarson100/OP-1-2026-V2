@@ -28,7 +28,7 @@ double GranularEngine::nextSpawnInterval()
 
     // Texture adds timing jitter to the spawn clock.
     interval *= 1.0 + static_cast<double> (params_.texture) * 0.75 * static_cast<double> (rng_.nextBipolar());
-    return interval > 16.0 ? interval : 16.0;
+    return interval > 10.0 ? interval : 10.0;
 }
 
 void GranularEngine::spawnGrain (const SampleBuffer& buffer)
@@ -106,6 +106,24 @@ void GranularEngine::fillGrainDisplay (const SampleBuffer& material, GrainDispla
 
     const float tf = static_cast<float> (std::max (1, material.getNumFrames()));
     pool_.fillGrainDisplay (tf, out, maxSlots);
+}
+
+void GranularEngine::getGrainFocusWindow01 (float totalFrames, float& outStart01, float& outLen01) const noexcept
+{
+    if (totalFrames < 2.0f)
+    {
+        outStart01 = 0.0f;
+        outLen01   = 0.0f;
+        return;
+    }
+
+    const float tf        = totalFrames;
+    const float startFrame = params_.position * (tf - 1.0f);
+    const float sizeSec    = map::grainSizeSeconds (params_.size);
+    const float lenFrames  = sizeSec * static_cast<float> (sampleRate_);
+
+    outStart01 = std::clamp (startFrame / tf, 0.0f, 1.0f);
+    outLen01   = std::clamp (lenFrames / tf, 0.0f, 1.0f);
 }
 
 } // namespace sculpt

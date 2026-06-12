@@ -77,11 +77,12 @@ namespace bridge
 
 // JUCE wrapper only: bridges host audio/MIDI/parameters/state to the
 // portable sculpt::Engine. No DSP or instrument logic lives here.
-class SculptSamplerAudioProcessor : public juce::AudioProcessor
+class SculptSamplerAudioProcessor : public juce::AudioProcessor,
+                                     private juce::AudioProcessorParameter::Listener
 {
 public:
     SculptSamplerAudioProcessor();
-    ~SculptSamplerAudioProcessor() override = default;
+    ~SculptSamplerAudioProcessor() override;
 
     void prepareToPlay (double sampleRate, int samplesPerBlock) override;
     void releaseResources() override;
@@ -124,6 +125,9 @@ private:
     void buildParameterLinks();
     void syncParametersToEngine();
     void handleMidi (const juce::MidiBuffer& midi);
+
+    void parameterValueChanged (int parameterIndex, float newValue) override;
+    void parameterGestureChanged (int parameterIndex, bool gestureIsStarting) override;
 
     struct ParameterLink
     {

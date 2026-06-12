@@ -72,10 +72,31 @@ void Engine::reset()
     clock_.reset();
     for (auto& track : tracks_)
         track.reset();
+    for (auto& scrub : materialPlayheadScrubActive_)
+        scrub.store (false, std::memory_order_relaxed);
     inputEnvelope_.reset();
     modEngine_.reset();
     trackPeaks_.fill (0.0f);
     masterPeakL_ = masterPeakR_ = 0.0f;
+}
+
+void Engine::setMaterialPlayheadScrubActive (int trackIndex, bool active)
+{
+    if (trackIndex < 0 || trackIndex >= kNumTracks)
+        return;
+    materialPlayheadScrubActive_[static_cast<size_t> (trackIndex)].store (active, std::memory_order_relaxed);
+}
+
+float Engine::materialWaveCenter01 (int trackIndex) const
+{
+    const int ti = trackIndex < 0 ? 0 : (trackIndex >= kNumTracks ? kNumTracks - 1 : trackIndex);
+    const auto ts = static_cast<size_t> (ti);
+    const auto& trk = tracks_[ts];
+    const bool usePlayhead = materialPlayheadScrubActive_[ts].load (std::memory_order_relaxed)
+                           || ! trk.isPlaying();
+    if (usePlayhead)
+        return params_.effective (ti, ParameterId::MaterialPlayhead);
+    return trk.getTapePositionNormalized();
 }
 
 // ---- Parameters ------------------------------------------------------------
@@ -289,7 +310,8 @@ void Engine::processChunk (float** inputs, float** outputs,
         const auto ts = static_cast<size_t> (t);
         auto& track = tracks_[ts];
 
-        track.updateParameters (params_, t);
+        const bool playheadScrub = materialPlayheadScrubActive_[ts].load (std::memory_order_relaxed);
+        track.updateParameters (params_, t, playheadScrub);
         track.process (busL_[ts].data(), busR_[ts].data(), numSamples);
 
         float peak = trackPeaks_[ts] * 0.92f;
@@ -363,6 +385,19 @@ void Engine::updateScreenModel()
     tracks_[static_cast<size_t> (selected)].getEngine().getGranular().fillGrainDisplay (
         matBuf, screen_.grainDisplay.data(), kGrainsPerTrack);
 
+    const int matFrameCount = matBuf.getNumFrames();
+    if (selectedPage_ == Page::Granular && matFrameCount > 1)
+    {
+        const float tf = static_cast<float> (matFrameCount);
+        tracks_[static_cast<size_t> (selected)].getEngine().getGranular().getGrainFocusWindow01 (
+            tf, screen_.grainFocusStart01, screen_.grainFocusLen01);
+    }
+    else
+    {
+        screen_.grainFocusStart01 = 0.0f;
+        screen_.grainFocusLen01   = 0.0f;
+    }
+
     screen_.materialLoopStart01 = params_.effective (selected, ParameterId::LoopStart);
     screen_.materialLoopEnd01   = params_.effective (selected, ParameterId::LoopEnd);
 
@@ -374,10 +409,8 @@ void Engine::updateScreenModel()
     const int matFrames = matBuf.getNumFrames();
     if (selectedPage_ == Page::Material && matFrames > 1)
     {
-        const auto& selTrack = tracks_[static_cast<size_t> (selected)];
-        const float zoom     = params_.effective (selected, ParameterId::MaterialWaveZoom);
-        const float ph       = params_.effective (selected, ParameterId::MaterialPlayhead);
-        const float center   = selTrack.isPlaying() ? selTrack.getTapePositionNormalized () : ph;
+        const float zoom   = params_.effective (selected, ParameterId::MaterialWaveZoom);
+        const float center = materialWaveCenter01 (selected);
         computeMaterialWaveView (matFrames, zoom, center, screen_.materialViewStart01,
                                  screen_.materialViewEnd01);
     }
@@ -479,9 +512,7 @@ void Engine::fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* o
     if (applyWaveZoom && frames > 1)
     {
         const float zoom   = params_.effective (ti, ParameterId::MaterialWaveZoom);
-        const float ph     = params_.effective (ti, ParameterId::MaterialPlayhead);
-        const auto& trk    = tracks_[static_cast<size_t> (ti)];
-        const float center = trk.isPlaying() ? trk.getTapePositionNormalized () : ph;
+        const float center = materialWaveCenter01 (ti);
         computeMaterialWaveView (frames, zoom, center, view0, view1);
     }
 

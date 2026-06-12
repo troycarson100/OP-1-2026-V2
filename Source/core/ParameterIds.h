@@ -97,7 +97,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::TrackLevel:      return 0.8f;
         case ParameterId::TrackPan:        return 0.5f;
         case ParameterId::MaterialLevel:   return 0.8f;
-        case ParameterId::TapeSpeed:       return 0.75f;  // -> ratio 1.0
+        case ParameterId::TapeSpeed:       return 0.5f;   // stopped (display 0, ratio 0)
         case ParameterId::LoopStart:       return 0.0f;
         case ParameterId::LoopEnd:         return 1.0f;
         case ParameterId::GrainPosition:   return 0.30f;
@@ -149,7 +149,15 @@ namespace map
         return std::fabs (r) < 0.02f ? 0.0f : r;
     }
 
-    inline float grainSizeSeconds (float n)  { return 0.02f + n * n * 0.48f; }   // 20ms .. 500ms
+    // LCD / readout: -100 (full reverse) .. 0 (stopped) .. +100 (full forward). Matches tapeSpeedRatio range.
+    inline int tapeSpeedDisplay (float n)
+    {
+        const int x = static_cast<int> (std::lround ((clamp01 (n) - 0.5f) * 200.0f));
+        return std::clamp (x, -100, 100);
+    }
+
+    // Grain length in seconds (normalized knob). Quadratic taper; max was 500 ms, now ~2 s (4x).
+    inline float grainSizeSeconds (float n)  { return 0.02f + n * n * 1.92f; }   // ~20 ms .. ~2.0 s
     inline float grainDensityHz (float n)    { return 1.0f + n * n * 59.0f; }    // 1 .. 60 grains/s
     inline float grainPitchRatio (float n)   { return semitonesToRatio ((n - 0.5f) * 12.0f); } // +/- 12 semitones
 

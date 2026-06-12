@@ -44,6 +44,7 @@ public:
 
     void setMaterialLevel (float level01) { materialLevel_.setTarget (level01); }
     void setGrainMix (float mix01)        { grainMix_.setTarget (mix01); }
+    void snapGrainMix (float mix01)       { grainMix_.snap (mix01); }
 
     // Overwrites outL/outR with the processed chain. numSamples <= kMaxBlockSize.
     void process (const SampleBuffer& material, float* outL, float* outR, int numSamples);

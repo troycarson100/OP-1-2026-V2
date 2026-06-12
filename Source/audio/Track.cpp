@@ -33,12 +33,14 @@ void Track::prepare (double sampleRate, int trackIndex)
 void Track::reset()
 {
     engine_.reset();
-    playing_ = false;
+    playing_                   = false;
+    ignoreStoppedPlayheadSeek_ = false;
 }
 
 void Track::trigger()
 {
-    playing_ = true;
+    playing_                      = true;
+    ignoreStoppedPlayheadSeek_    = false;
     engine_.getTape().start();
     engine_.getGranular().setActive (true);
     gate_.gateOn();
@@ -46,7 +48,8 @@ void Track::trigger()
 
 void Track::stop()
 {
-    playing_ = false;
+    playing_                   = false;
+    ignoreStoppedPlayheadSeek_ = true;
     engine_.getGranular().setActive (false);
     gate_.gateOff();
     // The tape keeps its position; it simply fades out through the gate.
@@ -70,9 +73,10 @@ void Track::replaceMaterialStereo (const float* left, const float* right, int nu
     material_.loadStereoPCM (left, right, numFrames);
     recorder_.prepare (material_.getBuffer());
     engine_.reset();
+    ignoreStoppedPlayheadSeek_ = false;
 }
 
-void Track::updateParameters (const ParameterState& state, int trackIndex)
+void Track::updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub)
 {
     const int t = trackIndex;
     auto get = [&state, t] (ParameterId id) { return state.effective (t, id); };
@@ -86,10 +90,18 @@ void Track::updateParameters (const ParameterState& state, int trackIndex)
     tape.setLoopRegion (get (ParameterId::LoopStart), get (ParameterId::LoopEnd));
     tape.setLevel (1.0f);
 
+    if (materialPlayheadScrub)
+        ignoreStoppedPlayheadSeek_ = false;
+
     const int matFrames = material_.getBuffer().getNumFrames();
-    if (! playing_)
+    const bool seekTapeToPlayhead = materialPlayheadScrub
+                                    || (! playing_ && ! ignoreStoppedPlayheadSeek_);
+    if (seekTapeToPlayhead)
         tape.seekNormalized (get (ParameterId::MaterialPlayhead), matFrames,
                              get (ParameterId::LoopStart), get (ParameterId::LoopEnd));
+
+    // Follow knob while gesturing (tape keeps running); seek above updates scrubTarget first.
+    tape.setFollowScrubTarget (materialPlayheadScrub);
 
     GranularEngine::Params gp;
     gp.position = get (ParameterId::GrainPosition);
@@ -101,7 +113,11 @@ void Track::updateParameters (const ParameterState& state, int trackIndex)
     gp.spread   = get (ParameterId::GrainSpread);
     gp.mix      = get (ParameterId::GrainMix);
     engine_.getGranular().setParams (gp);
-    engine_.setGrainMix (gp.mix);
+    if (materialPlayheadScrub)
+        // Strong duck of granular layer while scanning; tape path does the scrubbing.
+        engine_.snapGrainMix (gp.mix * 0.05f);
+    else
+        engine_.setGrainMix (gp.mix);
 
     {
         const bool spectral = get (ParameterId::FilterMode) > 0.5f;

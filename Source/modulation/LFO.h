@@ -22,6 +22,9 @@ public:
 
     static float valueForShape (Shape s, double phase01);
 
+    /** Monotone warp of wrapped 0..1 phase; bend01 0.5 = identity. */
+    static double bentPhase01 (double phase01, float bend01) noexcept;
+
     void prepare (double sampleRate) override;
     void reset() override;
     void update (int numSamples) override;
@@ -29,6 +32,7 @@ public:
 
     void setRateHz (float hz)   { rateHz_ = hz > 0.0f ? hz : 0.01f; }
     void setShape (Shape s)     { shape_ = (s < Shape::Count ? s : Shape::Sine); }
+    void setBend01 (float bend01) noexcept;
     void setPhase (float phase01);
 
     // Wrapped 0..1 phase for display (free mode); sync mode ignores and uses beat phase.
@@ -40,6 +44,7 @@ private:
     float  rateHz_     = 0.5f;
     float  value_      = 0.0f;
     Shape  shape_      = Shape::Sine;
+    float  bend01_     = 0.5f;
 };
 
 } // namespace sculpt

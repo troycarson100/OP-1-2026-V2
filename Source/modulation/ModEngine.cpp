@@ -80,7 +80,8 @@ float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamp
             {
                 const int divIdx = static_cast<int> (sp.waveDivision);
                 const double c = syncDivisionCyclesPerBeat (divIdx);
-                const double ph = wrapPhase01 (beatAtBlockStart * c + static_cast<double> (sp.wavePhase01));
+                const double phRaw = wrapPhase01 (beatAtBlockStart * c + static_cast<double> (sp.wavePhase01));
+                const double ph     = LFO::bentPhase01 (phRaw, sp.waveBend01);
                 bipolar = LFO::valueForShape (sh, ph) * depth;
             }
             else
@@ -88,6 +89,7 @@ float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamp
                 auto& lfo = lfos_[static_cast<size_t> (track)][static_cast<size_t> (slot)];
                 lfo.setRateHz (sp.waveRateHz);
                 lfo.setShape (sh);
+                lfo.setBend01 (sp.waveBend01);
                 lfo.update (numSamples);
                 bipolar = lfo.getValue() * depth;
             }
@@ -239,8 +241,9 @@ void ModEngine::writeModLcdSnapshot (int track, int slot, float inputEnv01, doub
             const float      depth = waveDepth01 (sp.waveAmount);
             for (int i = 0; i < ModLcdSnapshot::kBins; ++i)
             {
-                const double ph = (static_cast<double> (i) + 0.5)
-                                  / static_cast<double> (ModLcdSnapshot::kBins);
+                const double phRaw = (static_cast<double> (i) + 0.5)
+                                     / static_cast<double> (ModLcdSnapshot::kBins);
+                const double ph    = LFO::bentPhase01 (phRaw, sp.waveBend01);
                 const float v   = LFO::valueForShape (sh, ph);
                 const float a   = std::fabs (v);
                 out.carrier01[static_cast<size_t> (i)]   = a;
@@ -253,16 +256,18 @@ void ModEngine::writeModLcdSnapshot (int track, int slot, float inputEnv01, doub
                 const double c     = syncDivisionCyclesPerBeat (divIdx);
                 out.scannerPhase01 = static_cast<float> (wrapPhase01 (beatAtEnd * c
                                                                       + static_cast<double> (sp.wavePhase01)));
-                const double phNow = wrapPhase01 (beatAtEnd * c + static_cast<double> (sp.wavePhase01));
-                const float  bip   = LFO::valueForShape (sh, phNow) * depth;
+                const double phRaw = wrapPhase01 (beatAtEnd * c + static_cast<double> (sp.wavePhase01));
+                const double phB   = LFO::bentPhase01 (phRaw, sp.waveBend01);
+                const float  bip   = LFO::valueForShape (sh, phB) * depth;
                 out.valueBipolar   = bip + (sp.waveOffset01 - 0.5f) * 2.0f;
             }
             else
             {
                 const auto& lfo = lfos_[static_cast<size_t> (track)][static_cast<size_t> (slot)];
                 out.scannerPhase01 = lfo.getWrappedPhase01();
-                const double phNow = static_cast<double> (out.scannerPhase01);
-                const float  bip   = LFO::valueForShape (sh, phNow) * depth;
+                const double phRaw = static_cast<double> (out.scannerPhase01);
+                const double phB   = LFO::bentPhase01 (phRaw, sp.waveBend01);
+                const float  bip   = LFO::valueForShape (sh, phB) * depth;
                 out.valueBipolar   = bip + (sp.waveOffset01 - 0.5f) * 2.0f;
             }
             out.active = true;

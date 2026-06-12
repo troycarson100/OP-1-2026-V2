@@ -51,6 +51,8 @@ private:
     juce::ComboBox    waveShapeCombo_;
     juce::Label       waveAmtL_ { {}, "Amount %" };
     juce::Slider      waveAmount_;
+    juce::Label       waveBendL_ { {}, "Bend" };
+    juce::Slider      waveBend_;
 
     juce::Label       rndSection_ { {}, "Random" };
     juce::ToggleButton rndSyncT_ { "Sync" };

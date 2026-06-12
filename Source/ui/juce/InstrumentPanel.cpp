@@ -164,6 +164,22 @@ namespace
         constexpr int nSlots = sculpt::kGrainsPerTrack;
         constexpr float twoPi = juce::MathConstants<float>::twoPi;
 
+        // Instant knob-aligned window (snappy); active grains add motion/blur underneath.
+        if (screen.grainFocusLen01 > 1.0e-5f)
+        {
+            const float x0 = wfArea.getX() + screen.grainFocusStart01 * wfArea.getWidth();
+            const float w  = juce::jmax (1.0f, screen.grainFocusLen01 * wfArea.getWidth());
+            auto focusBand = juce::Rectangle<float> (x0, wfArea.getY(), w, wfArea.getHeight())
+                                 .getIntersection (wfArea);
+            if (! focusBand.isEmpty())
+            {
+                g.setColour (kWaveformFill.withAlpha (0.26f));
+                g.fillRect (focusBand);
+                g.setColour (kWaveformStroke.withAlpha (0.62f));
+                g.drawRect (focusBand, 1.0f);
+            }
+        }
+
         for (int i = 0; i < nSlots; ++i)
         {
             const auto& slot = screen.grainDisplay[static_cast<size_t> (i)];
@@ -175,19 +191,30 @@ namespace
             const float spanW = juce::jmax (1.0f, slot.len01 * wfArea.getWidth());
             const float xR = xL + spanW;
 
-            const float alpha = 0.2f + 0.55f * juce::jlimit (0.0f, 1.0f, slot.phase01);
+            // Emphasize young grains; fade tails so old windows don't read as "lagging" the knob.
+            const float life = std::pow (1.0f - slot.phase01, 1.25f);
+            const float alpha = (0.24f + 0.52f * life) * (0.55f + 0.45f * life);
             const float hue = static_cast<float> (i % 6) / 6.0f;
-            const juce::Colour col = juce::Colour::fromHSV (hue, 0.55f, 0.92f, alpha);
-
-            const float thick = 1.0f + 1.4f * juce::jlimit (0.0f, 1.0f, slot.phase01);
-            g.setColour (col);
+            const juce::Colour col = juce::Colour::fromHSV (hue, 0.55f, 0.92f, juce::jlimit (0.08f, 0.95f, alpha));
 
             const float y0 = wfArea.getY();
             const float y1 = wfArea.getBottom();
-            g.drawLine (juce::jlimit (wfArea.getX(), wfArea.getRight(), xL), y0,
-                        juce::jlimit (wfArea.getX(), wfArea.getRight(), xL), y1, thick);
-            g.drawLine (juce::jlimit (wfArea.getX(), wfArea.getRight(), xR), y0,
-                        juce::jlimit (wfArea.getX(), wfArea.getRight(), xR), y1, thick);
+            const float xl = juce::jlimit (wfArea.getX(), wfArea.getRight(), xL);
+            const float xr = juce::jlimit (wfArea.getX(), wfArea.getRight(), xR);
+            const float bandL = juce::jmin (xl, xr);
+            const float bandR = juce::jmax (xl, xr);
+            auto band = juce::Rectangle<float> (bandL, y0, juce::jmax (1.0f, bandR - bandL), y1 - y0)
+                            .getIntersection (wfArea);
+            if (! band.isEmpty())
+            {
+                g.setColour (juce::Colour::fromHSV (hue, 0.38f, 0.9f, alpha * 0.34f));
+                g.fillRect (band);
+            }
+
+            const float thick = 1.0f + 1.15f * life;
+            g.setColour (col);
+            g.drawLine (xl, y0, xl, y1, thick);
+            g.drawLine (xr, y0, xr, y1, thick);
         }
     }
 
@@ -279,6 +306,8 @@ namespace
                 return sculpt::filterKeyName (sculpt::normalizedToKeyIndex (v));
             case P::FilterMode:
                 return (v > 0.5f) ? "Ring" : "LP/BP/HP";
+            case P::TapeSpeed:
+                return juce::String (sculpt::map::tapeSpeedDisplay (v));
             default:
                 return juce::String (v, 3);
         }

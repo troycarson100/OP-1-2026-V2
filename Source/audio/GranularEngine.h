@@ -39,6 +39,7 @@ public:
     int   getActiveGrains() const { return pool_.countActive(); }
 
     void fillGrainDisplay (const SampleBuffer& material, GrainDisplaySlot* out, int maxSlots) const;
+    void getGrainFocusWindow01 (float totalFrames, float& outStart01, float& outLen01) const noexcept;
 
 private:
     void spawnGrain (const SampleBuffer& buffer);

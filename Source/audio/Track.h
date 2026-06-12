@@ -29,7 +29,8 @@ public:
     bool isCaptureArmed() const { return recorder_.isArmed(); }
 
     // Sync all per-track parameters (with modulation applied) into the DSP.
-    void updateParameters (const ParameterState& state, int trackIndex);
+    // When materialPlayheadScrub is true, MaterialPlayhead re-seeks tape even if the track is playing.
+    void updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub);
 
     // Overwrites outL/outR with this track's output.
     void process (float* outL, float* outR, int numSamples);
@@ -54,6 +55,9 @@ private:
     Envelope       gate_;
 
     bool playing_ = false;
+    // After STOP, skip mapping APVTS playhead → tape until the user scrubs the playhead again.
+    // The stored playhead param can lag live tape during play; snapping it on stop caused a click.
+    bool ignoreStoppedPlayheadSeek_ = false;
 };
 
 } // namespace sculpt

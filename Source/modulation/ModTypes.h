@@ -27,6 +27,8 @@ struct ModPatchSlotParams
 
     float waveRateHz    = 0.35f;
     float waveAmount    = 1.0f;   // 0..1 depth; UI shows 0..100%
+    // 0..1 phase shaping: 0.5 = linear (no bend), <0.5 skews earlier in cycle, >0.5 skews later.
+    float waveBend01    = 0.5f;
     float wavePhase01  = 0.0f;
     float waveOffset01  = 0.5f;
     uint8_t waveShape   = 0;      // LFO::Shape index (see LFO.h)

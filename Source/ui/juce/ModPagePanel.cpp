@@ -109,6 +109,12 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
     };
     addAndMakeVisible (waveShapeCombo_);
 
+    wireSlider (waveBend_, 0.0f, 100.0f);
+    waveBend_.textFromValueFunction = [] (double v) { return juce::String (juce::roundToInt (v)); };
+    waveBend_.valueFromTextFunction = [] (const juce::String& t) { return static_cast<double> (t.getIntValue()); };
+    waveBend_.setTooltip ("Skews phase through the cycle: 50 = straight shape, lower pulls earlier, "
+                          "higher pushes later (more dramatic curves at extremes).");
+
     rndSyncT_.onClick = [this]
     {
         syncRandomControlsEnabled();
@@ -160,7 +166,7 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
     waveSyncT_.setClickingTogglesState (true);
     rndSyncT_.setClickingTogglesState (true);
 
-    for (auto& l : { &waveRateL_, &waveShapeL_, &waveAmtL_, &rndRateL_, &rndSlewL_, &adA_, &adD_, &adS_, &adR_ })
+    for (auto& l : { &waveRateL_, &waveShapeL_, &waveAmtL_, &waveBendL_, &rndRateL_, &rndSlewL_, &adA_, &adD_, &adS_, &adR_ })
     {
         l->setJustificationType (juce::Justification::centredRight);
         addAndMakeVisible (*l);
@@ -193,7 +199,7 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
         addAndMakeVisible (s);
     }
 
-    for (auto& s : { &waveRate_, &waveAmount_, &rndRate_, &rndSlew_, &adsrA_, &adsrD_, &adsrS_, &adsrR_ })
+    for (auto& s : { &waveRate_, &waveAmount_, &waveBend_, &rndRate_, &rndSlew_, &adsrA_, &adsrD_, &adsrS_, &adsrR_ })
         addAndMakeVisible (*s);
 
     for (auto& l : mapName_)
@@ -286,6 +292,8 @@ void ModPagePanel::kindChanged()
     waveShapeCombo_.setVisible (wave);
     waveAmtL_.setVisible (wave);
     waveAmount_.setVisible (wave);
+    waveBendL_.setVisible (wave);
+    waveBend_.setVisible (wave);
     if (wave)
         syncWaveControlsEnabled();
 
@@ -330,6 +338,7 @@ void ModPagePanel::refreshFromEngine()
         juce::dontSendNotification);
     waveRate_.setValue (sp.waveRateHz, juce::dontSendNotification);
     waveAmount_.setValue (static_cast<double> (sculpt::clamp01 (sp.waveAmount)) * 100.0, juce::dontSendNotification);
+    waveBend_.setValue (static_cast<double> (sculpt::clamp01 (sp.waveBend01)) * 100.0, juce::dontSendNotification);
     waveShapeCombo_.setSelectedId (juce::jlimit (1, 5, static_cast<int> (sp.waveShape) + 1), juce::dontSendNotification);
 
     rndSyncT_.setToggleState (sp.randomSync != 0, juce::dontSendNotification);
@@ -387,6 +396,7 @@ void ModPagePanel::commitToEngine()
     sp.waveDivision = static_cast<uint8_t> (juce::jlimit (0, sculpt::kNumSyncDivisions - 1, waveDivCombo_.getSelectedItemIndex()));
     sp.waveRateHz   = static_cast<float> (waveRate_.getValue());
     sp.waveAmount   = sculpt::clamp01 (static_cast<float> (waveAmount_.getValue() / 100.0));
+    sp.waveBend01   = sculpt::clamp01 (static_cast<float> (waveBend_.getValue() / 100.0));
     sp.waveShape    = static_cast<uint8_t> (juce::jlimit (0, 4, waveShapeCombo_.getSelectedItemIndex()));
 
     sp.randomSync = rndSyncT_.getToggleState() ? 1u : 0u;
@@ -419,7 +429,7 @@ void ModPagePanel::commitToEngine()
 
 int ModPagePanel::recommendedScrollableHeight()
 {
-    return 380;
+    return 410;
 }
 
 void ModPagePanel::resized()
@@ -531,6 +541,8 @@ void ModPagePanel::resized()
         waveShapeCombo_.setBounds (r3);
         auto r4 = R.removeFromTop (26);
         placeLabeledSlider (r4, waveAmtL_, waveAmount_, 72);
+        auto r5 = R.removeFromTop (26);
+        placeLabeledSlider (r5, waveBendL_, waveBend_, 72);
     }
     else
     {
@@ -543,6 +555,8 @@ void ModPagePanel::resized()
         zeroBounds (waveShapeCombo_);
         zeroBounds (waveAmtL_);
         zeroBounds (waveAmount_);
+        zeroBounds (waveBendL_);
+        zeroBounds (waveBend_);
     }
 
     if (rnd)

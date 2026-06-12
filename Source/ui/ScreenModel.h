@@ -74,6 +74,9 @@ struct ScreenModel
 
     // Granular page: per-grain overlay on the material waveform (pool size).
     std::array<GrainDisplaySlot, kGrainsPerTrack> grainDisplay {};
+    // Knob-aligned grain window (no spray); LCD draws this for snappy feedback vs active grains.
+    float grainFocusStart01 = 0.0f;
+    float grainFocusLen01   = 0.0f;
 
     // Mod page: oscilloscope-style source preview (see ModLcdSnapshot).
     ModLcdSnapshot modLcd {};

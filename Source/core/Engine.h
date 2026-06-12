@@ -84,7 +84,13 @@ public:
     void fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope,
                                        bool applyWaveZoom) const;
 
+    // Host/UI: true while the user is actively gesturing the Material playhead control for a
+    // track (begin/end change gesture). Lets scrub override live tape during playback.
+    void setMaterialPlayheadScrubActive (int trackIndex, bool active);
+
 private:
+    float materialWaveCenter01 (int trackIndex) const;
+
     void applyPendingRequests();
     void updateModulation (float** inputs, int numInputChannels, int offset, int numSamples,
                            double beatAtBlockStart);
@@ -116,6 +122,9 @@ private:
     float masterPeakL_ = 0.0f, masterPeakR_ = 0.0f;
 
     int lastBusChunkSamples_ = 0;
+
+    // True while the Material playhead control is in an active change gesture (scrub).
+    std::array<std::atomic<bool>, kNumTracks> materialPlayheadScrubActive_ {};
 
     // Latched cross-thread requests (bitmask per track / scene index).
     std::atomic<uint32_t> pendingTriggers_ { 0 };
