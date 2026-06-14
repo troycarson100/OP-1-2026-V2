@@ -1,6 +1,7 @@
 #include "Engine.h"
 #include "../audio/GranularEngine.h"
 #include "../audio/WarpLaunchSync.h"
+#include "../modulation/ModTypes.h"
 #include "../util/MathUtils.h"
 
 #include <algorithm>
@@ -42,6 +43,36 @@ namespace
     }
 } // namespace
 
+namespace
+{
+    void peakBinsStereoWindow (const float* l, const float* r, int n,
+                               std::array<float, kMaterialWaveformBins>& out)
+    {
+        out.fill (0.0f);
+        if (l == nullptr || n <= 0)
+            return;
+        const int bins = static_cast<int> (out.size ());
+        for (int b = 0; b < bins; ++b)
+        {
+            const int i0 = b * n / bins;
+            int       i1 = (b + 1) * n / bins;
+            if (i1 <= i0)
+                i1 = i0 + 1;
+            if (i1 > n)
+                i1 = n;
+            float        pk = 0.0f;
+            const float* rr = (r != nullptr ? r : l);
+            for (int i = i0; i < i1; ++i)
+            {
+                const float sl = l[static_cast<size_t> (i)];
+                const float sr = rr[static_cast<size_t> (i)];
+                pk = std::max (pk, std::max (std::fabs (sl), std::fabs (sr)));
+            }
+            out[static_cast<size_t> (b)] = clamp01 (pk);
+        }
+    }
+} // namespace
+
 Engine::Engine()
 {
     for (auto& v : warpSpeedForResyncCompare_)
@@ -57,6 +88,13 @@ void Engine::prepare (double sampleRate, int blockSize)
     mixer_.prepare (sampleRate_);
     inputEnvelope_.prepare (sampleRate_);
     inputEnvelope_.setTimesMs (5.0f, 150.0f);
+    sidechainEnvelope_.prepare (sampleRate_);
+    sidechainEnvelope_.setTimesMs (5.0f, 150.0f);
+    for (auto& ef : trackBusEnvelopes_)
+    {
+        ef.prepare (sampleRate_);
+        ef.setTimesMs (5.0f, 150.0f);
+    }
 
     for (int t = 0; t < kNumTracks; ++t)
     {
@@ -85,6 +123,9 @@ void Engine::reset()
     for (auto& scrub : materialPlayheadScrubActive_)
         scrub.store (false, std::memory_order_relaxed);
     inputEnvelope_.reset();
+    sidechainEnvelope_.reset();
+    for (auto& ef : trackBusEnvelopes_)
+        ef.reset();
     modEngine_.reset();
     trackPeaks_.fill (0.0f);
     masterPeakL_ = masterPeakR_ = 0.0f;
@@ -368,6 +409,11 @@ void Engine::setSelectedPage (Page page)
         granularEncoderPage_.store (0, std::memory_order_relaxed);
         screen_.granularEncoderPage = 0;
     }
+    if (page != Page::Mod)
+    {
+        modEncoderPage_.store (0, std::memory_order_relaxed);
+        screen_.modEncoderPage = 0;
+    }
 }
 
 void Engine::setGranularEncoderPage (int pageIndex)
@@ -380,6 +426,18 @@ void Engine::setGranularEncoderPage (int pageIndex)
 int Engine::getGranularEncoderPage() const
 {
     return std::clamp (granularEncoderPage_.load (std::memory_order_relaxed), 0, 1);
+}
+
+void Engine::setModEncoderPage (int pageIndex)
+{
+    const int p = std::clamp (pageIndex, 0, 1);
+    modEncoderPage_.store (p, std::memory_order_relaxed);
+    screen_.modEncoderPage = static_cast<uint8_t> (p);
+}
+
+int Engine::getModEncoderPage() const
+{
+    return std::clamp (modEncoderPage_.load (std::memory_order_relaxed), 0, 1);
 }
 
 void Engine::setModPatch (const ModPatch& patch)
@@ -406,8 +464,8 @@ void Engine::setModLcdSlot (int slotIndex)
 
 // ---- Audio -------------------------------------------------------------------
 
-void Engine::process (float** inputs, float** outputs,
-                      int numInputChannels, int numOutputChannels, int numSamples)
+void Engine::process (float** mainInputOutput, const float* const* sidechainInputs, int numSidechainChannels,
+                      float** outputs, int numInputChannels, int numOutputChannels, int numSamples)
 {
     if (! prepared_ || outputs == nullptr || numOutputChannels < 1 || numSamples <= 0)
         return;
@@ -418,15 +476,18 @@ void Engine::process (float** inputs, float** outputs,
     while (offset < numSamples)
     {
         const int chunk = (numSamples - offset) < kMaxBlockSize ? (numSamples - offset) : kMaxBlockSize;
-        processChunk (inputs, outputs, numInputChannels, numOutputChannels, offset, chunk);
+        processChunk (mainInputOutput, sidechainInputs, numSidechainChannels,
+                      outputs, numInputChannels, numOutputChannels, offset, chunk);
         offset += chunk;
     }
 
     updateScreenModel();
 }
 
-void Engine::updateModulation (float** inputs, int numInputChannels, int offset, int numSamples,
-                               double beatAtBlockStart)
+void Engine::updateModulation (float** inputs, int numInputChannels,
+                               const float* const* sidechainInputs, int numSidechainChannels,
+                               const std::array<float, kNumTracks>& trackBusEnvLag01,
+                               int offset, int numSamples, double beatAtBlockStart)
 {
     if (inputs != nullptr && numInputChannels > 0)
     {
@@ -437,18 +498,32 @@ void Engine::updateModulation (float** inputs, int numInputChannels, int offset,
         inputEnvelope_.processAudio (inPtrs, numInputChannels > 1 ? 2 : 1, numSamples);
     }
 
+    if (sidechainInputs != nullptr && numSidechainChannels > 0
+        && sidechainInputs[0] != nullptr)
+    {
+        const float* scPtrs[2] = {
+            sidechainInputs[0] + offset,
+            (numSidechainChannels > 1 && sidechainInputs[1] != nullptr ? sidechainInputs[1]
+                                                                         : sidechainInputs[0])
+                + offset
+        };
+        sidechainEnvelope_.processAudio (scPtrs, numSidechainChannels > 1 ? 2 : 1, numSamples);
+    }
+    else
+        sidechainEnvelope_.reset();
+
     macros_.setMacro (0, params_.getGlobal (ParameterId::Macro1));
     macros_.setMacro (1, params_.getGlobal (ParameterId::Macro2));
     macros_.setMacro (2, params_.getGlobal (ParameterId::Macro3));
     macros_.setMacro (3, params_.getGlobal (ParameterId::Macro4));
 
     params_.clearModOffsets();
-    modEngine_.apply (params_, inputEnvelope_.getValue(), numSamples,
-                      beatAtBlockStart, clock_.getBpm(), sampleRate_);
+    modEngine_.apply (params_, inputEnvelope_.getValue(), sidechainEnvelope_.getValue(), trackBusEnvLag01,
+                      numSamples, beatAtBlockStart, clock_.getBpm(), sampleRate_);
 }
 
-void Engine::processChunk (float** inputs, float** outputs,
-                           int numInputChannels, int numOutputChannels,
+void Engine::processChunk (float** inputs, const float* const* sidechainInputs, int numSidechainChannels,
+                           float** outputs, int numInputChannels, int numOutputChannels,
                            int offset, int numSamples)
 {
     lastBusChunkSamples_ = numSamples;
@@ -458,7 +533,12 @@ void Engine::processChunk (float** inputs, float** outputs,
     maybeResyncWarpPlayheadsAfterVarispeedChange (beatForTiming);
 
     const double beatAtBlockStart = beatForTiming;
-    updateModulation (inputs, numInputChannels, offset, numSamples, beatAtBlockStart);
+    std::array<float, kNumTracks> trackBusEnvLag01 {};
+    for (int t = 0; t < kNumTracks; ++t)
+        trackBusEnvLag01[static_cast<size_t> (t)] = trackBusEnvelopes_[static_cast<size_t> (t)].getValue();
+
+    updateModulation (inputs, numInputChannels, sidechainInputs, numSidechainChannels,
+                      trackBusEnvLag01, offset, numSamples, beatAtBlockStart);
     clock_.advance (numSamples);
 
     // Capture live input into any armed track.
@@ -511,6 +591,13 @@ void Engine::processChunk (float** inputs, float** outputs,
         mixer_.setTrackPan (t, params_.effective (t, ParameterId::TrackPan));
     }
 
+    for (int t = 0; t < kNumTracks; ++t)
+    {
+        const auto ts = static_cast<size_t> (t);
+        const float* busPtrs[2] = { busL_[ts].data(), busR_[ts].data() };
+        trackBusEnvelopes_[ts].processAudio (busPtrs, 2, numSamples);
+    }
+
     mixer_.setOutputGain (params_.effectiveGlobal (ParameterId::OutputGain));
 
     float* outL = outputs[0] + offset;
@@ -532,6 +619,56 @@ void Engine::processChunk (float** inputs, float** outputs,
     }
     masterPeakL_ = pl;
     masterPeakR_ = pr;
+
+    if (selectedPage_ == Page::Mod)
+        captureModRouteOverlay (inputs, numInputChannels, sidechainInputs, numSidechainChannels, offset,
+                                numSamples);
+}
+
+void Engine::captureModRouteOverlay (float** inputs, int numInputChannels,
+                                     const float* const* sidechainInputs, int numSidechainChannels,
+                                     int offset, int numSamples)
+{
+    modRouteOverlayBins_.fill (0.0f);
+    const int trk = getSelectedTrack();
+    int       slot = modLcdSlot_.load (std::memory_order_relaxed);
+    if (slot < 0)
+        slot = 0;
+    else if (slot >= kModSlotsPerTrack)
+        slot = kModSlotsPerTrack - 1;
+
+    const auto& sp = modEngine_.getLivePatch().slots[static_cast<size_t> (trk)][static_cast<size_t> (slot)];
+    if (sp.kind != ModulatorKind::InputEnvelope)
+        return;
+
+    const uint8_t route = sp.inputEnvSource;
+    if (route == kInputEnvRouteMainInput)
+    {
+        if (inputs != nullptr && numInputChannels > 0 && inputs[0] != nullptr)
+        {
+            const float* l = inputs[0] + offset;
+            const float* r = (numInputChannels > 1 && inputs[1] != nullptr ? inputs[1] : inputs[0]) + offset;
+            peakBinsStereoWindow (l, r, numSamples, modRouteOverlayBins_);
+        }
+    }
+    else if (route == kInputEnvRouteHostSidechain)
+    {
+        if (sidechainInputs != nullptr && numSidechainChannels > 0 && sidechainInputs[0] != nullptr)
+        {
+            const float* l = sidechainInputs[0] + offset;
+            const float* r = (numSidechainChannels > 1 && sidechainInputs[1] != nullptr ? sidechainInputs[1]
+                                                                                        : sidechainInputs[0])
+                                 + offset;
+            peakBinsStereoWindow (l, r, numSamples, modRouteOverlayBins_);
+        }
+    }
+    else if (route >= kInputEnvRouteTrackBase && route < kInputEnvRouteTrackBase + kNumTracks)
+    {
+        const int t = static_cast<int> (route - kInputEnvRouteTrackBase);
+        const float* l = busL_[static_cast<size_t> (t)].data();
+        const float* r = busR_[static_cast<size_t> (t)].data();
+        peakBinsStereoWindow (l, r, numSamples, modRouteOverlayBins_);
+    }
 }
 
 void Engine::updateScreenModel()
@@ -622,6 +759,8 @@ void Engine::updateScreenModel()
     const int granularEncPage = getGranularEncoderPage();
     screen_.granularEncoderPage = static_cast<uint8_t> (granularEncPage);
 
+    screen_.modEncoderPage = static_cast<uint8_t> (getModEncoderPage());
+
     int visible = 0;
     screen_.paramModOffset.fill (0.0f);
     for (int slot = 0; slot < kMaxParamsPerPage; ++slot)
@@ -663,9 +802,20 @@ void Engine::updateScreenModel()
     if (selectedPage_ == Page::Mod)
     {
         const int    trk    = getSelectedTrack();
-        const int    slot   = modLcdSlot_.load (std::memory_order_relaxed);
+        int          slot   = modLcdSlot_.load (std::memory_order_relaxed);
+        if (slot < 0)
+            slot = 0;
+        else if (slot >= kModSlotsPerTrack)
+            slot = kModSlotsPerTrack - 1;
         const double beatEnd = clock_.getBeatPosition();
-        modEngine_.writeModLcdSnapshot (trk, slot, inputEnvelope_.getValue(), beatEnd, screen_.modLcd);
+        std::array<float, kNumTracks> trackEnv01 {};
+        for (int t = 0; t < kNumTracks; ++t)
+            trackEnv01[static_cast<size_t> (t)] = trackBusEnvelopes_[static_cast<size_t> (t)].getValue();
+        const auto& sp = modEngine_.getLivePatch().slots[static_cast<size_t> (trk)][static_cast<size_t> (slot)];
+        const bool passOverlay = (sp.kind == ModulatorKind::InputEnvelope);
+        modEngine_.writeModLcdSnapshot (trk, slot, inputEnvelope_.getValue(), sidechainEnvelope_.getValue(),
+                                        trackEnv01, passOverlay ? &modRouteOverlayBins_ : nullptr, beatEnd,
+                                        screen_.modLcd);
     }
     else
         screen_.modLcd.active = false;

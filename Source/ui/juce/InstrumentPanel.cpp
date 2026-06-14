@@ -578,6 +578,10 @@ namespace
         drawSymmetricPeaksStyled (g, wfArea, m.effective01,
                                   kModLcdModFill,
                                   kModLcdModStroke.withAlpha (0.95f), 1.35f);
+        if (m.overlayActive)
+            drawSymmetricPeaksStyled (g, wfArea, m.overlayPeaks01,
+                                      kModLcdOverlayFill,
+                                      kModLcdOverlayStroke.withAlpha (0.92f), 1.05f);
 
         const float scanX = wfArea.getX() + juce::jlimit (0.0f, 1.0f, m.scannerPhase01) * wfArea.getWidth();
         g.setColour (kModLcdScanner.withAlpha (0.88f));

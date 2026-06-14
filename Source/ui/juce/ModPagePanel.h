@@ -33,6 +33,8 @@ private:
     void configureMappingDepthSlider (int row);
     void updatePolarButtonLabel (int row);
 
+    void rebuildInputRouteCombo (int selectedTrack);
+
     SculptSamplerAudioProcessor& processor_;
 
     juce::Label       title_ { {}, "Modulation" };
@@ -78,6 +80,9 @@ private:
     juce::Label       mapHeaderParam_ { {}, "Param" };
     juce::Label       mapHeaderPolar_ { {}, "Mode" };
     juce::Label       mapHeaderDepth_ { {}, "Depth" };
+
+    juce::Label       inputRouteLabel_ { {}, "Input from" };
+    juce::ComboBox    inputRouteCombo_;
 
     std::array<juce::Label,        sculpt::kMaxModMappingEncoders> mapName_;
     std::array<juce::ToggleButton, sculpt::kMaxModMappingEncoders> mapPolarT_;

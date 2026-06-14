@@ -21,6 +21,25 @@ enum class ModulatorKind : uint8_t
     InputEnvelope
 };
 
+// Input-envelope routing (ModPatchSlotParams::inputEnvSource).
+constexpr uint8_t kInputEnvRouteMainInput     = 4;  // plugin main input bus
+constexpr uint8_t kInputEnvRouteHostSidechain = 5;  // host sidechain bus (when connected)
+constexpr uint8_t kInputEnvRouteTrackBase    = 10; // follow track t: value == 10 + t (t in 0..kNumTracks-1)
+
+inline float inputEnvelopeLevelForRoute (uint8_t route, float main01, float side01,
+                                         const std::array<float, kNumTracks>& track01)
+{
+    if (route == kInputEnvRouteMainInput)
+        return main01;
+    if (route == kInputEnvRouteHostSidechain)
+        return side01;
+    if (route >= kInputEnvRouteTrackBase && route < kInputEnvRouteTrackBase + static_cast<uint8_t> (kNumTracks))
+        return track01[static_cast<size_t> (route - kInputEnvRouteTrackBase)];
+    if (route < 2)
+        return (route == 0 ? main01 : side01);
+    return main01;
+}
+
 struct ModPatchSlotParams
 {
     ModulatorKind kind = ModulatorKind::Off;
@@ -44,6 +63,11 @@ struct ModPatchSlotParams
     float adsrDecaySec   = 0.08f;
     float adsrSustain01  = 0.65f;
     float adsrReleaseSec = 0.12f;
+
+    // When kind == InputEnvelope: which signal the follower tracks (kInputEnvRoute*).
+    // Legacy blobs used 0/1 as sidechain toggle; migrate on load (PluginProcessor).
+    uint8_t inputEnvSource = kInputEnvRouteMainInput;
+    uint8_t padInputEnv[3] = {};
 };
 
 struct ModMappingDepth

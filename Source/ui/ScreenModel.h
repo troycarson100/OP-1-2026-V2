@@ -44,6 +44,9 @@ struct ModLcdSnapshot
     float amount01       = 1.0f;             // wave amount or unity for other kinds
     uint8_t kind         = 0;                 // ModulatorKind as uint8
     bool    active        = false;
+    // InputEnvelope: short-time peak envelope of the routed audio (drawn over carrier/effective).
+    std::array<float, kBins> overlayPeaks01 {};
+    bool                     overlayActive = false;
 };
 
 // Abstract display state for the future hardware screen.
@@ -60,6 +63,8 @@ struct ScreenModel
 
     // Granular: which 8-slot encoder bank the LCD mirrors (0 = core, 1 = sync/Euclidean/quant + patterns).
     uint8_t granularEncoderPage = 0;
+    // Reserved for future hardware mirroring of the Mod page; editor uses a single non-paged layout.
+    uint8_t modEncoderPage = 0;
 
     std::array<bool,  kNumTracks> trackPlaying {};
     std::array<bool,  kNumTracks> trackRecording {};

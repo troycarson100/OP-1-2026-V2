@@ -62,7 +62,8 @@ void ModEngine::triggerAdsr (int track, int slot)
     pendingAdsrTrig_.fetch_or (bit, std::memory_order_relaxed);
 }
 
-float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamples,
+float ModEngine::sourceValue (int track, int slot, float inputEnvMain01, float inputEnvSide01,
+                              const std::array<float, kNumTracks>& trackInputEnv01, int numSamples,
                               double beatAtBlockStart, double beatAtBlockEnd)
 {
     const auto& sp = live_.slots[static_cast<size_t> (track)][static_cast<size_t> (slot)];
@@ -122,13 +123,16 @@ float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamp
         case ModulatorKind::InputEnvelope:
         default:
         {
-            const float u = clamp01 (inputEnv01);
+            const float raw = inputEnvelopeLevelForRoute (sp.inputEnvSource, inputEnvMain01, inputEnvSide01,
+                                                          trackInputEnv01);
+            const float u   = clamp01 (raw);
             return u * 2.0f - 1.0f;
         }
     }
 }
 
-void ModEngine::apply (ParameterState& params, float inputEnv01, int numSamples,
+void ModEngine::apply (ParameterState& params, float inputEnvMain01, float inputEnvSide01,
+                       const std::array<float, kNumTracks>& trackInputEnv01, int numSamples,
                        double beatAtBlockStart, double bpm, double sampleRate)
 {
     const double beatDelta = (bpm > 0.0 && sampleRate > 0.0 && numSamples > 0)
@@ -153,7 +157,7 @@ void ModEngine::apply (ParameterState& params, float inputEnv01, int numSamples,
             if (live_.slots[static_cast<size_t> (t)][static_cast<size_t> (s)].kind == ModulatorKind::Off)
                 continue;
 
-            const float src = sourceValue (t, s, inputEnv01, numSamples,
+            const float src = sourceValue (t, s, inputEnvMain01, inputEnvSide01, trackInputEnv01, numSamples,
                                            beatAtBlockStart, beatAtBlockEnd);
             const float uniShape = src * 0.5f + 0.5f;
 
@@ -212,8 +216,10 @@ namespace
     }
 } // namespace
 
-void ModEngine::writeModLcdSnapshot (int track, int slot, float inputEnv01, double beatAtEnd,
-                                   ModLcdSnapshot& out) const
+void ModEngine::writeModLcdSnapshot (int track, int slot, float inputEnvMain01, float inputEnvSide01,
+                                     const std::array<float, kNumTracks>& trackInputEnv01,
+                                     const std::array<float, ModLcdSnapshot::kBins>* overlayPeaks01,
+                                     double beatAtEnd, ModLcdSnapshot& out) const
 {
     out.carrier01.fill (0.0f);
     out.effective01.fill (0.0f);
@@ -222,6 +228,8 @@ void ModEngine::writeModLcdSnapshot (int track, int slot, float inputEnv01, doub
     out.amount01       = 1.0f;
     out.kind           = 0;
     out.active         = false;
+    out.overlayActive  = false;
+    out.overlayPeaks01.fill (0.0f);
 
     if (track < 0 || track >= kNumTracks || slot < 0 || slot >= kModSlotsPerTrack)
         return;
@@ -324,7 +332,9 @@ void ModEngine::writeModLcdSnapshot (int track, int slot, float inputEnv01, doub
         case ModulatorKind::InputEnvelope:
         default:
         {
-            const float u = clamp01 (inputEnv01);
+            const float raw = inputEnvelopeLevelForRoute (sp.inputEnvSource, inputEnvMain01, inputEnvSide01,
+                                                          trackInputEnv01);
+            const float u   = clamp01 (raw);
             for (int i = 0; i < ModLcdSnapshot::kBins; ++i)
             {
                 const float skew = static_cast<float> (i) / static_cast<float> (ModLcdSnapshot::kBins - 1);
@@ -336,6 +346,11 @@ void ModEngine::writeModLcdSnapshot (int track, int slot, float inputEnv01, doub
             out.valueBipolar   = u * 2.0f - 1.0f;
             out.amount01       = u;
             out.active         = true;
+            if (overlayPeaks01 != nullptr)
+            {
+                out.overlayPeaks01 = *overlayPeaks01;
+                out.overlayActive  = true;
+            }
             return;
         }
     }

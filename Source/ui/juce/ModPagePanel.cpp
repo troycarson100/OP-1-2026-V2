@@ -2,6 +2,7 @@
 #include "../../PluginProcessor.h"
 #include "../../ui/PageModel.h"
 #include "../../core/ParameterIds.h"
+#include "../../modulation/ModTypes.h"
 #include "../../modulation/SyncDivision.h"
 #include "../../util/MathUtils.h"
 
@@ -60,6 +61,16 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
             commitToEngine();
     };
     addAndMakeVisible (kindCombo_);
+
+    inputRouteLabel_.setFont (juce::FontOptions (12.0f));
+    inputRouteLabel_.setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (inputRouteLabel_);
+    inputRouteCombo_.onChange = [this]
+    {
+        if (! suppressCallbacks_)
+            commitToEngine();
+    };
+    addAndMakeVisible (inputRouteCombo_);
 
     trigButton_.onClick = [this]
     {
@@ -318,6 +329,10 @@ void ModPagePanel::kindChanged()
     adsrR_.setVisible (adsr);
     trigButton_.setVisible (adsr);
 
+    const bool inEnv = (k == 4);
+    inputRouteLabel_.setVisible (inEnv);
+    inputRouteCombo_.setVisible (inEnv);
+
     resized();
 }
 
@@ -352,6 +367,15 @@ void ModPagePanel::refreshFromEngine()
     adsrD_.setValue (sp.adsrDecaySec, juce::dontSendNotification);
     adsrS_.setValue (sp.adsrSustain01, juce::dontSendNotification);
     adsrR_.setValue (sp.adsrReleaseSec, juce::dontSendNotification);
+
+    rebuildInputRouteCombo (trk);
+    {
+        const int ix = inputRouteCombo_.indexOfItemId (static_cast<int> (sp.inputEnvSource));
+        if (ix >= 0)
+            inputRouteCombo_.setSelectedItemIndex (ix, juce::dontSendNotification);
+        else
+            inputRouteCombo_.setSelectedId (sculpt::kInputEnvRouteMainInput, juce::dontSendNotification);
+    }
 
     const int pg = juce::jlimit (0, kNumMapPages - 1, mapPageCombo_.getSelectedItemIndex());
     mapPageCombo_.setSelectedItemIndex (pg, juce::dontSendNotification);
@@ -409,6 +433,9 @@ void ModPagePanel::commitToEngine()
     sp.adsrSustain01  = static_cast<float> (adsrS_.getValue());
     sp.adsrReleaseSec = static_cast<float> (adsrR_.getValue());
 
+    if (sp.kind == sculpt::ModulatorKind::InputEnvelope)
+        sp.inputEnvSource = static_cast<uint8_t> (inputRouteCombo_.getSelectedId());
+
     const int pg = juce::jlimit (0, kNumMapPages - 1, mapPageCombo_.getSelectedItemIndex());
     const auto page = pageFromMapIndex (pg);
     for (int i = 0; i < sculpt::kMaxModMappingEncoders; ++i)
@@ -429,7 +456,21 @@ void ModPagePanel::commitToEngine()
 
 int ModPagePanel::recommendedScrollableHeight()
 {
-    return 410;
+    return 450;
+}
+
+void ModPagePanel::rebuildInputRouteCombo (int selectedTrack)
+{
+    inputRouteCombo_.clear (juce::dontSendNotification);
+    inputRouteCombo_.addItem ("Input", sculpt::kInputEnvRouteMainInput);
+    for (int t = 0; t < sculpt::kNumTracks; ++t)
+    {
+        if (t == selectedTrack)
+            continue;
+        inputRouteCombo_.addItem ("Trk " + juce::String (t + 1),
+                                  sculpt::kInputEnvRouteTrackBase + t);
+    }
+    inputRouteCombo_.addItem ("Host sidechain", sculpt::kInputEnvRouteHostSidechain);
 }
 
 void ModPagePanel::resized()
@@ -454,6 +495,21 @@ void ModPagePanel::resized()
     kindCombo_.setBounds (topRow.removeFromLeft (130));
     topRow.removeFromLeft (8);
     trigButton_.setBounds (topRow.removeFromLeft (100));
+
+    const int k = kindCombo_.getSelectedItemIndex();
+    const bool inEnv = (k == 4);
+    if (inEnv)
+    {
+        auto rr = area.removeFromTop (26);
+        inputRouteLabel_.setBounds (rr.removeFromLeft (92));
+        inputRouteCombo_.setBounds (rr.removeFromLeft (juce::jmin (260, juce::jmax (160, rr.getWidth()))));
+        area.removeFromTop (6);
+    }
+    else
+    {
+        zeroBounds (inputRouteLabel_);
+        zeroBounds (inputRouteCombo_);
+    }
 
     area.removeFromTop (8);
 
@@ -518,7 +574,6 @@ void ModPagePanel::resized()
         }
     }
 
-    const int k = kindCombo_.getSelectedItemIndex();
     const bool wave = (k == 1);
     const bool rnd  = (k == 2);
     const bool adsr = (k == 3);
