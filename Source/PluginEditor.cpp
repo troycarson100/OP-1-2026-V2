@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "ui/juce/EditorColours.h"
+#include "ui/SpaceTimeFormat.h"
 #include "util/Constants.h"
 
 #include <array>
@@ -144,6 +145,11 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
         });
     };
 
+    addAndMakeVisible (spaceClearButton_);
+    spaceClearButton_.setTooltip ("Clears delay and reverb buffers on the selected track (next audio block).");
+    spaceClearButton_.onClick = [this]
+    { processor_.requestSpaceClear (getSelectedTrackFromParameter()); };
+
     addAndMakeVisible (helpLabel_);
     helpLabel_.setJustificationType (juce::Justification::centredLeft);
     helpLabel_.setColour (juce::Label::textColourId, kText.withAlpha (0.88f));
@@ -174,7 +180,7 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     instrumentPanel_.setUiPage (currentPage_);
     // 60 Hz: LCD (mod hints, Mod oscilloscope, meters) tracks audio-thread ScreenModel with less lag than 30 Hz.
     startTimerHz (60);
-    setSize (980, 840);
+    setSize (980, 900);
 }
 
 int SculptSamplerAudioProcessorEditor::getSelectedTrackFromParameter() const
@@ -211,6 +217,7 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
     using namespace sculpt_editor;
 
     pageControls_.clear();
+    spaceTimeSlider_ = nullptr;
     auto& apvts = processor_.getValueTreeState();
     const int track = getSelectedTrackFromParameter();
     lastBuiltTrack_ = track;
@@ -232,22 +239,64 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
             break;
 
         PageControl control;
-        control.slider = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
-                                                         juce::Slider::NoTextBox);
-        control.slider->setColour (juce::Slider::rotarySliderFillColourId, kAccent);
-        addAndMakeVisible (*control.slider);
+        if (id == sculpt::ParameterId::SpaceFreeze)
+        {
+            control.spaceFreezeToggle = std::make_unique<juce::ToggleButton> ("Freeze");
+            control.spaceFreezeToggle->setClickingTogglesState (true);
+            control.spaceFreezeToggle->setColour (juce::ToggleButton::textColourId, kText);
+            control.spaceFreezeToggle->setColour (juce::ToggleButton::tickColourId, kAccent);
+            addAndMakeVisible (*control.spaceFreezeToggle);
 
-        control.label = std::make_unique<juce::Label>();
-        control.label->setText (sculpt::parameterName (id), juce::dontSendNotification);
-        control.label->setJustificationType (juce::Justification::centred);
-        control.label->setColour (juce::Label::textColourId, kText);
-        control.label->setFont (juce::FontOptions (12.0f));
-        addAndMakeVisible (*control.label);
+            control.label = std::make_unique<juce::Label>();
+            control.label->setText (sculpt::parameterName (id), juce::dontSendNotification);
+            control.label->setJustificationType (juce::Justification::centred);
+            control.label->setColour (juce::Label::textColourId, kText);
+            control.label->setFont (juce::FontOptions (12.0f));
+            addAndMakeVisible (*control.label);
 
-        const auto paramId = bridge::paramIdString (track, id);
-        if (apvts.getParameter (paramId) != nullptr)
-            control.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                apvts, paramId, *control.slider);
+            const auto paramId = bridge::paramIdString (track, id);
+            if (apvts.getParameter (paramId) != nullptr)
+                control.spaceFreezeAttachment =
+                    std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+                        apvts, paramId, *control.spaceFreezeToggle);
+        }
+        else
+        {
+            control.slider = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
+                                                             juce::Slider::NoTextBox);
+            control.slider->setColour (juce::Slider::rotarySliderFillColourId, kAccent);
+            control.slider->setColour (juce::Slider::textBoxTextColourId, kText);
+            control.slider->setColour (juce::Slider::textBoxOutlineColourId, kText.withAlpha (0.25f));
+            control.slider->setColour (juce::Slider::textBoxBackgroundColourId, kBackground);
+            control.slider->setTextBoxIsEditable (false);
+            control.slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 14);
+            control.slider->setNumDecimalPlacesToDisplay (2);
+            addAndMakeVisible (*control.slider);
+
+            control.label = std::make_unique<juce::Label>();
+            control.label->setText (sculpt::parameterName (id), juce::dontSendNotification);
+            control.label->setJustificationType (juce::Justification::centred);
+            control.label->setColour (juce::Label::textColourId, kText);
+            control.label->setFont (juce::FontOptions (12.0f));
+            addAndMakeVisible (*control.label);
+
+            const auto paramId = bridge::paramIdString (track, id);
+            if (apvts.getParameter (paramId) != nullptr)
+                control.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
+                    apvts, paramId, *control.slider);
+
+            // Delay Time: show the musical/free value (matching the LCD + Time Mode),
+            // not the raw normalized number. Set after the attachment so it wins.
+            if (id == sculpt::ParameterId::SpaceDelayTime)
+            {
+                control.slider->textFromValueFunction = [this] (double value)
+                {
+                    return juce::String (sculpt::formatSpaceDelayTime (static_cast<float> (value), spaceTimeModeIdx_));
+                };
+                control.slider->updateText();
+                spaceTimeSlider_ = control.slider.get();
+            }
+        }
 
         if (id == sculpt::ParameterId::TapeSpeed && currentPage_ == sculpt::Page::Material)
         {
@@ -283,6 +332,15 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
     instrumentPanel_.setUiPage (currentPage_);
 
     const auto& screen = processor_.getEngine().getScreenModel();
+
+    // Keep the Space Time rotary's text box in sync with the current Time Mode.
+    if (spaceTimeSlider_ != nullptr && currentPage_ == sculpt::Page::Space
+        && screen.space.delayTimeMode != spaceTimeModeIdx_)
+    {
+        spaceTimeModeIdx_ = screen.space.delayTimeMode;
+        spaceTimeSlider_->updateText();
+    }
+
     for (int t = 0; t < sculpt::kNumTracks; ++t)
     {
         const auto ts = static_cast<size_t> (t);
@@ -363,6 +421,7 @@ void SculptSamplerAudioProcessorEditor::resized()
     }
 
     loadSampleButton_.setBounds (actionRow.removeFromLeft (88).reduced (0, 6));
+    spaceClearButton_.setBounds (actionRow.removeFromLeft (100).reduced (0, 6));
     helpLabel_.setBounds (actionRow.reduced (8, 6));
 
     // Remaining `area`: LCD + VALUE encoders. Split SELECT (left) vs instrument column.
@@ -376,7 +435,10 @@ void SculptSamplerAudioProcessorEditor::resized()
     const int knobMinH = 160;
     const int lcdMinH = 350;
     const int available = juce::jmax (lcdMinH + knobMinH, lcdKnobStack.getHeight());
-    const int lcdH = juce::jlimit (lcdMinH, 440, juce::roundToInt (available * 0.65f));
+    // Many encoder rows (e.g. Space): give the knob stack more of the column so rows don't crush.
+    const float lcdFrac =
+        (static_cast<int> (pageControls_.size()) > 8) ? 0.52f : 0.65f;
+    const int lcdH = juce::jlimit (lcdMinH, 440, juce::roundToInt (static_cast<float> (available) * lcdFrac));
 
     auto lcdBounds = lcdKnobStack.removeFromTop (lcdH);
     instrumentPanel_.setBounds (lcdBounds);
@@ -407,7 +469,8 @@ void SculptSamplerAudioProcessorEditor::resized()
     const int columns = 4;
     const int cellWidth = knobArea.getWidth() / columns;
     const int numRows = juce::jmax (1, (static_cast<int> (pageControls_.size()) + columns - 1) / columns);
-    const int cellHeight = juce::jmax (72, knobArea.getHeight() / numRows);
+    // Fit rows strictly inside knobArea — forcing a min taller than knobArea/rows overlaps page/track rows.
+    const int cellHeight = juce::jmax (1, knobArea.getHeight() / numRows);
     for (size_t i = 0; i < pageControls_.size(); ++i)
     {
         const int col = static_cast<int> (i) % columns;
@@ -417,7 +480,10 @@ void SculptSamplerAudioProcessorEditor::resized()
                                    cellWidth, cellHeight);
         cell = cell.reduced (8);
         pageControls_[i].label->setBounds (cell.removeFromBottom (16));
-        pageControls_[i].slider->setBounds (cell);
+        if (pageControls_[i].slider != nullptr)
+            pageControls_[i].slider->setBounds (cell);
+        else if (pageControls_[i].spaceFreezeToggle != nullptr)
+            pageControls_[i].spaceFreezeToggle->setBounds (cell.reduced (6, 10));
         if (pageControls_[i].tapeSnapToggle != nullptr)
         {
             constexpr int sq        = 12;

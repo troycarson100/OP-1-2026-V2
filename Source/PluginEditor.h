@@ -65,9 +65,16 @@ private:
         std::unique_ptr<juce::ToggleButton> tapeSnapToggle; // Material page + Tape Speed only
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> tapeSnapAttachment;
         std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> attachment;
+        // Space page: Freeze is a bool host parameter (toggle, not a rotary).
+        std::unique_ptr<juce::ToggleButton> spaceFreezeToggle;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> spaceFreezeAttachment;
     };
     std::vector<PageControl> pageControls_;
     int lastBuiltTrack_ = -1;
+
+    // Space page: keep the Time rotary's text box in sync with the Time Mode knob.
+    juce::Slider* spaceTimeSlider_ = nullptr;
+    int           spaceTimeModeIdx_ = 3;
 
     // Macros
     std::array<juce::Slider, sculpt::kNumMacros> macroSliders_;
@@ -77,6 +84,7 @@ private:
     juce::Viewport                  modPageViewport_;
 
     juce::TextButton loadSampleButton_ { "LOAD" };
+    juce::TextButton spaceClearButton_ { "CLR SPACE" };
     juce::Label      helpLabel_;
 
     std::unique_ptr<juce::FileChooser> sampleChooser_;

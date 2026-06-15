@@ -1,9 +1,12 @@
 #include <cmath>
 #include "InstrumentPanel.h"
 #include "EditorColours.h"
+#include "SpaceVisual.h"
 #include "../PageModel.h"
+#include "../SpaceTimeFormat.h"
 #include "../../core/FilterScales.h"
 #include "../../core/ParameterIds.h"
+#include "../../modulation/SyncDivision.h"
 #include "../../util/GrainPatternBank.h"
 #include "../../util/GrainPitchScales.h"
 
@@ -11,9 +14,8 @@ namespace
 {
     using namespace sculpt_editor;
 
-    // Fixed height reserved at the bottom of the LCD for the 4x4 VALUE readout grid.
-    constexpr int kValueGridH = 168;
-    // Waveform height: fraction of what remains above the reserved value grid.
+    // Fixed minimum for the bottom parameter readout; grows when >8 params (e.g. Space).
+    constexpr int kValueGridMinH = 168;
     constexpr float kWaveformFraction = 0.45f;
 
     void drawLoopRegion (juce::Graphics& g, juce::Rectangle<float> rect, float lo01, float hi01)
@@ -317,6 +319,14 @@ namespace
         return screen.selectedTrackMaterialTimeMode01;
     }
 
+    float spaceDelayTimeMode01FromScreen (const sculpt::ScreenModel& screen)
+    {
+        for (int i = 0; i < screen.numVisibleParams; ++i)
+            if (screen.paramIds[static_cast<size_t> (i)] == sculpt::ParameterId::SpaceDelayTimeMode)
+                return screen.paramValues[static_cast<size_t> (i)];
+        return 1.0f;
+    }
+
     juce::String formatParamCellValue (sculpt::ParameterId id, float v,
                                       const sculpt::ScreenModel& screen)
     {
@@ -381,6 +391,32 @@ namespace
             }
             case P::GrainPatternAmount:
                 return juce::String (juce::roundToInt (v * 100.0f)) + "%";
+            case P::SpaceDelayTime:
+            {
+                const int modeIdx = sculpt::map::spaceDelayTimeModeIndex (spaceDelayTimeMode01FromScreen (screen));
+                return juce::String (sculpt::formatSpaceDelayTime (v, modeIdx));
+            }
+            case P::SpaceDelayTimeMode:
+            {
+                const int m = sculpt::map::spaceDelayTimeModeIndex (v);
+                const char* names[] = { "Straight", "Dotted", "Triplet", "Free" };
+                return juce::String (names[static_cast<size_t> (m)]);
+            }
+            case P::SpaceFreeze:
+                return (v > 0.5f) ? "ON" : "OFF";
+            case P::SpaceReverbDecay:
+                return juce::String (sculpt::map::spaceReverbRt60Seconds (v), 1) + "s";
+            case P::SpaceDamp:
+                return juce::String (juce::roundToInt (sculpt::map::spaceDampCutoffHz (v))) + " Hz";
+            case P::SpaceDelayFeedback:
+                return juce::String (juce::roundToInt (sculpt::map::spaceDelayFeedbackGain (v) * 100.0f)) + "%";
+            case P::SpaceDelayAmount:
+            case P::SpaceReverbAmount:
+                return juce::String (juce::roundToInt (v * 100.0f)) + "%";
+            case P::SpaceReverbSize:
+                return juce::String (juce::roundToInt (sculpt::map::spaceReverbSizeLineScale (v) * 100.0f)) + "%";
+            case P::SpaceSpread:
+                return juce::String (juce::roundToInt (v * 100.0f)) + "%";
             default:
                 return juce::String (v, 3);
         }
@@ -390,8 +426,9 @@ namespace
                         const sculpt::ScreenModel& screen)
     {
         constexpr int kCols = 4;
-        // Hardware row: 8 encoders / LCD cells (Granular page 2 reuses the same 8 cells for sync + patterns).
-        constexpr int kLcdParamSlots = 8;
+        const int     nParams = screen.numVisibleParams;
+        const int kLcdParamSlots =
+            juce::jmin (16, juce::jmax (8, ((nParams + kCols - 1) / kCols) * kCols));
         const int     rows  = (kLcdParamSlots + kCols - 1) / kCols;
         const int     cellW = area.getWidth() / kCols;
         const int     cellH = rows > 0 ? area.getHeight() / rows : area.getHeight();
@@ -784,6 +821,7 @@ void InstrumentPanel::paint (juce::Graphics& g)
     const bool granularPage = (lcdPage == sculpt::Page::Granular);
     const bool filterPage   = (lcdPage == sculpt::Page::Filter);
     const bool modPage      = (lcdPage == sculpt::Page::Mod);
+    const bool spacePage    = (lcdPage == sculpt::Page::Space);
     // Prefer editor page; also treat engine-reported page as Mixer so the LCD never falls through
     // to the 4-track meter stack if message-thread vs audio-thread page state tears briefly.
     const bool mixerLcd     = (uiPage_ == sculpt::Page::Mixer)
@@ -791,7 +829,12 @@ void InstrumentPanel::paint (juce::Graphics& g)
     const bool waveformPage = materialPage || granularPage;
 
     // Reserve the fixed value grid strip at the bottom on every page.
-    const int valueH   = juce::jmin (kValueGridH, area.getHeight());
+    constexpr int cols = 4;
+    const int wantSlots =
+        juce::jmin (16, juce::jmax (8, ((screen.numVisibleParams + cols - 1) / cols) * cols));
+    const int lcdRows   = (wantSlots + cols - 1) / cols;
+    const int valueH   = juce::jmin (area.getHeight(),
+                                      juce::jmax (kValueGridMinH, lcdRows * 48 + 20));
     auto valueArea     = area.removeFromBottom (valueH);
 
     if (waveformPage)
@@ -899,6 +942,11 @@ void InstrumentPanel::paint (juce::Graphics& g)
     {
         const int bandDisplayH = juce::jlimit (40, area.getHeight(), area.getHeight() - 4);
         drawFilterBands (g, area.removeFromTop (bandDisplayH), screen);
+    }
+    else if (spacePage)
+    {
+        const int visH = juce::jmax (60, area.getHeight() - 4);
+        drawSpaceVisual (g, area.removeFromTop (visH), screen);
     }
     else
     {

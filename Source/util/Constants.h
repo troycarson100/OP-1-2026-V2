@@ -24,8 +24,10 @@ constexpr int    kGrainsPerTrack       = 24;
 // Placeholder material length per track, in seconds.
 constexpr float  kPlaceholderSeconds   = 2.0f;
 
-// Maximum delay time held by the Space stage, in seconds.
-constexpr float  kMaxSpaceSeconds      = 0.6f;
+// Space / Vast: max delay line (free + synced musical divisions at low BPM).
+constexpr float  kMaxSpaceDelaySeconds = 4.0f;
+// FDN delay lines sized for ~48 kHz; prepare() may scale read positions for other SR.
+constexpr int    kSpaceFdnNumLines     = 4;
 
 // Maximum capture buffer length per track, in seconds.
 constexpr float  kMaxCaptureSeconds    = 8.0f;

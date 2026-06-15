@@ -47,6 +47,8 @@ public:
     void triggerTrack (int trackIndex);
     void stopTrack (int trackIndex);
 
+    void requestSpaceClear (int trackIndex);
+
     void setCurrentScene (int sceneIndex);
     void saveCurrentScene (int sceneIndex);
     void recallScene (int sceneIndex);
@@ -152,6 +154,7 @@ private:
     bool   prepared_   = false;
 
     std::atomic<int> modLcdSlot_ { 0 };
+    std::atomic<uint32_t> pendingSpaceClear_ { 0 };
     std::atomic<int> granularEncoderPage_ { 0 };
 };
 

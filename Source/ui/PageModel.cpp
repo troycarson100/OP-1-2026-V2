@@ -39,10 +39,11 @@ namespace
         { ParameterId::ColorDrive, ParameterId::ColorTone, ParameterId::ColorMix,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
-        // Space
-        { ParameterId::SpaceAmount, ParameterId::SpaceFeedback, ParameterId::SpaceMix,
-          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
-          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
+        // Space (Vast-style)
+        { ParameterId::SpaceDelayAmount,   ParameterId::SpaceDelayTime,     ParameterId::SpaceReverbAmount,
+          ParameterId::SpaceReverbSize,    ParameterId::SpaceDelayFeedback, ParameterId::SpaceSpread,
+          ParameterId::SpaceDamp,            ParameterId::SpaceReverbDecay, ParameterId::SpaceDelayTimeMode,
+          ParameterId::SpaceFreeze, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
         // Mixer: level/pan, master out, 3-band mix EQ, compressor (stereo-linked in MixBusStage).
         { ParameterId::TrackLevel, ParameterId::TrackPan, ParameterId::OutputGain,
           ParameterId::MixEqLowGain, ParameterId::MixEqMidGain, ParameterId::MixEqHighGain,

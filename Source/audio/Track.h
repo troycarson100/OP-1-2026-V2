@@ -36,7 +36,11 @@ public:
     // hostBpm: transport / manual BPM from Clock (Warp mode only).
     // granularTiming: beat at chunk start, samples/beat, etc. (must match Engine clock chunk).
     void updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub,
-                           double hostBpm, const GranularBlockTiming& granularTiming);
+                           double hostBpm, const GranularBlockTiming& granularTiming,
+                           double engineSampleRate);
+
+    // Message thread / engine: flush delay+reverb buffers (latched to next audio block via Engine).
+    void clearSpaceBuffers();
 
     // Overwrites outL/outR with this track's output.
     void process (float* outL, float* outR, int numSamples);

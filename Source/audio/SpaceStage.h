@@ -1,34 +1,59 @@
 #pragma once
 
-#include "OnePole.h"
-#include "../util/RingBuffer.h"
-#include "../util/SmoothedValue.h"
+#include <array>
+#include <atomic>
+
+#include "SpaceDelay.h"
+#include "HallReverb.h"
+#include "../util/Constants.h"
 
 namespace sculpt
 {
 
-// Space stage: lightweight stereo cross-feedback delay with damping.
-// Reads like a small ambience/echo, cheap enough for four tracks.
-// Delay lines are sized in prepare(); processing never allocates.
+struct GranularBlockTiming;
+
+// Vast-style space: stereo delay + 4-line FDN hall, eight primary controls + time mode + freeze.
 class SpaceStage
 {
 public:
     void prepare (double sampleRate);
     void reset();
 
-    // Normalized parameters: amount = send, feedback, mix = wet blend.
-    void setParams (float amount01, float feedback01, float mix01);
+    void requestClear() { clearRequested_.store (true, std::memory_order_release); }
+
+    void setParams (float delayAmt01, float delayTime01, float revAmt01, float revSize01,
+                    float delayFb01, float spread01, float damp01, float revDecay01,
+                    float timeMode01, bool freeze, double engineSampleRate,
+                    const GranularBlockTiming& timing);
 
     void process (float* left, float* right, int numSamples);
 
+    // Smoothed audible-wet levels (0..1) for the Space LCD visuals.
+    float getDelayWet01() const  { return delayWet01_; }
+    float getReverbWet01() const { return reverbWet01_; }
+
+    // Mapped values for the Space LCD visuals (set in setParams).
+    float getDelaySeconds() const        { return delaySeconds_; }
+    float getReverbDecaySeconds() const  { return reverbDecaySeconds_; }
+
 private:
-    RingBuffer delayL_, delayR_;
-    OnePole dampL_, dampR_;
+    double sampleRate_ = 44100.0;
 
-    int delaySamplesL_ = 0;
-    int delaySamplesR_ = 0;
+    SpaceDelay delay_;
+    HallReverb reverb_;
 
-    SmoothedValue amount_, feedback_, mix_;
+    std::atomic<bool> clearRequested_ { false };
+
+    std::array<float, kMaxBlockSize> dryL_ {}, dryR_ {}, wetDL_ {}, wetDR_ {}, wetRL_ {}, wetRR_ {}, monoRv_ {};
+
+    float delayAmt_ = 0.0f;
+    float revAmt_   = 0.0f;
+
+    float delayWet01_  = 0.0f;
+    float reverbWet01_ = 0.0f;
+
+    float delaySeconds_       = 0.25f;
+    float reverbDecaySeconds_ = 2.0f;
 };
 
 } // namespace sculpt

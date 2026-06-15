@@ -42,6 +42,7 @@ target_sources(SculptSampler PRIVATE
     Source/PluginEditor.cpp
     Source/ui/juce/InstrumentPanel.cpp
     Source/ui/juce/ModPagePanel.cpp
+    Source/ui/juce/SpaceVisual.cpp
 
     # Portable engine - core
     Source/core/Engine.cpp
@@ -65,6 +66,9 @@ target_sources(SculptSampler PRIVATE
     Source/audio/SpectralFilterStage.cpp
     Source/audio/ColorStage.cpp
     Source/audio/SpaceStage.cpp
+    Source/audio/SpaceDelay.cpp
+    Source/audio/HallReverb.cpp
+    Source/audio/AllpassDelay.cpp
     Source/audio/MixBusStage.cpp
     Source/audio/Mixer.cpp
     Source/audio/Envelope.cpp

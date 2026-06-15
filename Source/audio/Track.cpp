@@ -85,6 +85,11 @@ void Track::setCaptureArmed (bool armed)
         recorder_.disarm();
 }
 
+void Track::clearSpaceBuffers()
+{
+    engine_.getSpace().requestClear();
+}
+
 void Track::replaceMaterialStereo (const float* left, const float* right, int numFrames)
 {
     material_.loadStereoPCM (left, right, numFrames);
@@ -94,7 +99,8 @@ void Track::replaceMaterialStereo (const float* left, const float* right, int nu
 }
 
 void Track::updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub,
-                              double hostBpm, const GranularBlockTiming& granularTiming)
+                              double hostBpm, const GranularBlockTiming& granularTiming,
+                              double engineSampleRate)
 {
     const int t = trackIndex;
     auto get = [&state, t] (ParameterId id) { return state.effective (t, id); };
@@ -205,9 +211,18 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
                                   get (ParameterId::ColorTone),
                                   get (ParameterId::ColorMix));
 
-    engine_.getSpace().setParams (get (ParameterId::SpaceAmount),
-                                  get (ParameterId::SpaceFeedback),
-                                  get (ParameterId::SpaceMix));
+    engine_.getSpace().setParams (get (ParameterId::SpaceDelayAmount),
+                                  get (ParameterId::SpaceDelayTime),
+                                  get (ParameterId::SpaceReverbAmount),
+                                  get (ParameterId::SpaceReverbSize),
+                                  get (ParameterId::SpaceDelayFeedback),
+                                  get (ParameterId::SpaceSpread),
+                                  get (ParameterId::SpaceDamp),
+                                  get (ParameterId::SpaceReverbDecay),
+                                  get (ParameterId::SpaceDelayTimeMode),
+                                  get (ParameterId::SpaceFreeze) > 0.5f,
+                                  engineSampleRate,
+                                  granularTiming);
 
     engine_.getMixBus().setParams (get (ParameterId::MixEqLowGain),
                                   get (ParameterId::MixEqMidGain),

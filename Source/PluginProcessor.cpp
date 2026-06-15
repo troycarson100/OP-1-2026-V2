@@ -39,6 +39,16 @@ namespace
         return a;
     }
 
+    juce::StringArray makeSpaceDelayTimeModeChoices()
+    {
+        juce::StringArray a;
+        a.add ("Straight");
+        a.add ("Dotted");
+        a.add ("Triplet");
+        a.add ("Free");
+        return a;
+    }
+
     int choiceDefaultIndex (sculpt::ParameterId id, int numChoices)
     {
         if (numChoices < 2)
@@ -109,6 +119,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
     const juce::StringArray scaleChoices = makeFilterScaleChoices();
     const juce::StringArray keyChoices   = makeFilterKeyChoices();
     const juce::StringArray modeChoices  = makeFilterModeChoices();
+    const juce::StringArray spaceTimeModeChoices = makeSpaceDelayTimeModeChoices();
 
     for (int i = 0; i < kNumParameters; ++i)
     {
@@ -131,7 +142,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
                     addChoiceParam (layout, pid, pname, keyChoices, id);
                 else if (id == ParameterId::FilterMode)
                     addChoiceParam (layout, pid, pname, modeChoices, id);
+                else if (id == ParameterId::SpaceDelayTimeMode)
+                    addChoiceParam (layout, pid, pname, spaceTimeModeChoices, id);
                 else if (id == ParameterId::TapeSpeedSnap)
+                    layout.add (std::make_unique<juce::AudioParameterBool> (
+                        juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
+                else if (id == ParameterId::SpaceFreeze)
                     layout.add (std::make_unique<juce::AudioParameterBool> (
                         juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
                 else if (id == ParameterId::SampleRootBpm)

@@ -32,6 +32,25 @@ struct GrainPatternPresetSnapshot
     std::array<float, 16> stepAccentNorm {};       // 0..1 LED row (from gain accent shape)
 };
 
+// Space page LCD: delay + reverb visualization state (audio thread writes each block).
+struct SpaceVisualSnapshot
+{
+    // Delay
+    float delaySeconds = 0.25f; // current delay time
+    float delayFeedback01 = 0.3f;
+    float delaySpread01 = 0.5f;  // <0.5 ping-pong, >0.5 diffusion
+    float delayWet01 = 0.0f;     // smoothed audible level
+    int   delayTimeMode = 3;     // 0 Straight,1 Dotted,2 Triplet,3 Free
+
+    // Reverb
+    float reverbSize01 = 0.5f;
+    float reverbDecaySeconds = 2.0f;
+    float reverbDamp01 = 0.4f;
+    float reverbWet01 = 0.0f;    // smoothed audible level
+
+    bool  frozen = false;
+};
+
 // Mod page LCD: one-cycle preview + depth layer + scanner (audio thread writes).
 struct ModLcdSnapshot
 {
@@ -117,6 +136,9 @@ struct ScreenModel
 
     // Mod page: oscilloscope-style source preview (see ModLcdSnapshot).
     ModLcdSnapshot modLcd {};
+
+    // Space page: delay + reverb visualization (see SpaceVisualSnapshot).
+    SpaceVisualSnapshot space {};
 
     // Mixer page: post-mix-bus stereo peak envelope per track (same bin count as material waveform).
     std::array<std::array<float, kMaterialWaveformBins>, kNumTracks> mixBusWaveform {};

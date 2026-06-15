@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include "../util/Constants.h"
 #include "../util/MathUtils.h"
 
 namespace sculpt
@@ -62,9 +63,18 @@ enum class ParameterId : int
     ColorTone,
     ColorMix,
 
-    SpaceAmount,
-    SpaceFeedback,
-    SpaceMix,
+    // Space (Vast-style): delay + hall reverb. Time mode: Straight / Dotted / Triplet / Free (choice).
+    SpaceDelayAmount,
+    SpaceDelayTime,
+    SpaceReverbAmount,
+    SpaceReverbSize,
+    SpaceDelayFeedback,
+    SpaceSpread,
+    SpaceDamp,
+    SpaceReverbDecay,
+    SpaceDelayTimeMode,
+    // > 0.5: hold delay+reverb buffers in self-sustain (no new dry input).
+    SpaceFreeze,
 
     // > 0.5 = arm live input capture into this track's material buffer (plugin input bus).
     CaptureArm,
@@ -145,9 +155,16 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::ColorDrive:      return 0.15f;
         case ParameterId::ColorTone:       return 0.5f;
         case ParameterId::ColorMix:        return 0.30f;
-        case ParameterId::SpaceAmount:     return 0.25f;
-        case ParameterId::SpaceFeedback:   return 0.35f;
-        case ParameterId::SpaceMix:        return 0.25f;
+        case ParameterId::SpaceDelayAmount:   return 0.25f;
+        case ParameterId::SpaceDelayTime:     return 0.35f;
+        case ParameterId::SpaceReverbAmount:  return 0.20f;
+        case ParameterId::SpaceReverbSize:    return 0.45f;
+        case ParameterId::SpaceDelayFeedback: return 0.30f;
+        case ParameterId::SpaceSpread:        return 0.50f;
+        case ParameterId::SpaceDamp:          return 0.40f;
+        case ParameterId::SpaceReverbDecay:   return 0.45f;
+        case ParameterId::SpaceDelayTimeMode: return 1.0f; // Free (last choice index)
+        case ParameterId::SpaceFreeze:        return 0.0f;
         case ParameterId::CaptureArm:      return 0.0f;
         case ParameterId::FilterKey:       return 0.0f;   // C
         case ParameterId::MixEqLowGain:
@@ -294,7 +311,70 @@ namespace map
     inline float filterPitchSemitones (float n) { return (n - 0.5f) * 48.0f; }
 
     inline float colorDriveGain (float n)    { return 1.0f + n * 9.0f; }
-    inline float spaceFeedback (float n)     { return n * 0.85f; }
+
+    // Delay feedback gain 0 .. ~0.92 (stability margin).
+    inline float spaceDelayFeedbackGain (float n) { return clamp01 (n) * 0.92f; }
+
+    // Free-mode delay time (seconds), ~2 ms .. kMaxSpaceDelaySeconds.
+    inline float spaceDelayTimeFreeSeconds (float n)
+    {
+        const float mn = 0.002f;
+        const float mx = kMaxSpaceDelaySeconds;
+        const float t  = clamp01 (n);
+        return mn * std::pow (mx / mn, t);
+    }
+
+    // Reverb RT60 (seconds), ~0.3 .. 30 s from decay knob (long, lush tails).
+    inline float spaceReverbRt60Seconds (float n)
+    {
+        return 0.3f + std::pow (clamp01 (n), 2.0f) * 29.7f;
+    }
+
+    // Damping: one-pole cutoff Hz on feedback paths (delay + reverb).
+    inline float spaceDampCutoffHz (float n)
+    {
+        return 900.0f + clamp01 (n) * clamp01 (n) * 15000.0f;
+    }
+
+    // Reverb size: scales plate delay lengths (0.5 .. 2.2 multiplier) for a much bigger space.
+    inline float spaceReverbSizeLineScale (float n) { return 0.5f + clamp01 (n) * 1.7f; }
+
+    // SpaceDelayTimeMode: 0 Straight, 1 Dotted, 2 Triplet, 3 Free (choice index).
+    inline int spaceDelayTimeModeIndex (float n01)
+    {
+        return std::clamp (static_cast<int> (std::lround (clamp01 (n01) * 3.0f)), 0, 3);
+    }
+
+    // Delay synced time uses a clean straight base division; the Time Mode knob then
+    // applies straight / dotted / triplet. Keeps the readout unambiguous (no stray "T").
+    inline int spaceDelayDivisionIndex (float n01)
+    {
+        constexpr int kN = 6;
+        return std::clamp (static_cast<int> (std::lround (clamp01 (n01) * static_cast<float> (kN - 1))), 0, kN - 1);
+    }
+
+    inline double spaceDelayDivisionBeats (int idx)
+    {
+        static constexpr double kBeats[6] = { 4.0, 2.0, 1.0, 0.5, 0.25, 0.125 }; // 1/1 .. 1/32
+        return kBeats[static_cast<size_t> (std::clamp (idx, 0, 5))];
+    }
+
+    inline const char* spaceDelayDivisionLabel (int idx)
+    {
+        static const char* kLabel[6] = { "1/1", "1/2", "1/4", "1/8", "1/16", "1/32" };
+        return kLabel[static_cast<size_t> (std::clamp (idx, 0, 5))];
+    }
+
+    // Musical delay: straight base division scaled by the time mode (dotted / triplet).
+    inline double spaceSyncedDelayBeats (float timeKnob01, int modeIdx)
+    {
+        double b = spaceDelayDivisionBeats (spaceDelayDivisionIndex (timeKnob01));
+        if (modeIdx == 1) // Dotted
+            b *= 1.5;
+        else if (modeIdx == 2) // Triplet
+            b *= (2.0 / 3.0);
+        return std::max (1.0 / 128.0, b);
+    }
     inline float toneCutoffHz (float n)      { return 400.0f * std::pow (2.0f, n * 5.0f); }    // 400Hz .. ~12.8kHz
 
     // Mix EQ: +/- 12 dB per band; 0.5 = flat.
@@ -357,9 +437,16 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::ColorDrive:      return "Color Drive";
         case ParameterId::ColorTone:       return "Color Tone";
         case ParameterId::ColorMix:        return "Color Mix";
-        case ParameterId::SpaceAmount:     return "Space Amount";
-        case ParameterId::SpaceFeedback:   return "Space Feedback";
-        case ParameterId::SpaceMix:        return "Space Mix";
+        case ParameterId::SpaceDelayAmount:   return "Delay";
+        case ParameterId::SpaceDelayTime:     return "Time";
+        case ParameterId::SpaceReverbAmount:  return "Reverb";
+        case ParameterId::SpaceReverbSize:    return "Size";
+        case ParameterId::SpaceDelayFeedback: return "Fdbk";
+        case ParameterId::SpaceSpread:        return "Spread";
+        case ParameterId::SpaceDamp:          return "Damp";
+        case ParameterId::SpaceReverbDecay: return "Decay";
+        case ParameterId::SpaceDelayTimeMode: return "Time Mode";
+        case ParameterId::SpaceFreeze:        return "Freeze";
         case ParameterId::CaptureArm:      return "Input Capture";
         case ParameterId::FilterKey:       return "Key";
         case ParameterId::MixEqLowGain:    return "Mix Bass";

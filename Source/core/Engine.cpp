@@ -285,8 +285,19 @@ void Engine::fireWarpLaunchDeadlines (double beatAtBlockStart)
     }
 }
 
+void Engine::requestSpaceClear (int trackIndex)
+{
+    if (trackIndex >= 0 && trackIndex < kNumTracks)
+        pendingSpaceClear_.fetch_or (1u << static_cast<uint32_t> (trackIndex), std::memory_order_relaxed);
+}
+
 void Engine::applyPendingRequests()
 {
+    const uint32_t spaceClear = pendingSpaceClear_.exchange (0);
+    for (int t = 0; t < kNumTracks; ++t)
+        if ((spaceClear & (1u << static_cast<uint32_t> (t))) != 0)
+            tracks_[static_cast<size_t> (t)].clearSpaceBuffers();
+
     const uint32_t triggers = pendingTriggers_.exchange (0);
     const uint32_t stops    = pendingStops_.exchange (0);
 
@@ -492,7 +503,7 @@ void Engine::processChunk (float** inputs, float** outputs,
         auto& track = tracks_[ts];
 
         const bool playheadScrub = materialPlayheadScrubActive_[ts].load (std::memory_order_relaxed);
-        track.updateParameters (params_, t, playheadScrub, bpmUse, granularTiming);
+        track.updateParameters (params_, t, playheadScrub, bpmUse, granularTiming, sampleRate_);
         track.process (busL_[ts].data(), busR_[ts].data(), numSamples);
 
         float peak = trackPeaks_[ts] * 0.92f;
@@ -686,6 +697,22 @@ void Engine::updateScreenModel()
 
             screen_.mixCompReduction[ts] = clamp01 (tracks_[ts].getEngine().getMixBus().getCompReductionMeter01 ());
         }
+    }
+
+    if (selectedPage_ == Page::Space)
+    {
+        auto&       sp = tracks_[static_cast<size_t> (selected)].getEngine().getSpace();
+        auto&       v  = screen_.space;
+        v.delaySeconds       = sp.getDelaySeconds();
+        v.delayFeedback01    = params_.effective (selected, ParameterId::SpaceDelayFeedback);
+        v.delaySpread01      = params_.effective (selected, ParameterId::SpaceSpread);
+        v.delayWet01         = sp.getDelayWet01();
+        v.delayTimeMode      = map::spaceDelayTimeModeIndex (params_.effective (selected, ParameterId::SpaceDelayTimeMode));
+        v.reverbSize01       = params_.effective (selected, ParameterId::SpaceReverbSize);
+        v.reverbDecaySeconds = sp.getReverbDecaySeconds();
+        v.reverbDamp01       = params_.effective (selected, ParameterId::SpaceDamp);
+        v.reverbWet01        = sp.getReverbWet01();
+        v.frozen             = params_.effective (selected, ParameterId::SpaceFreeze) > 0.5f;
     }
 }
 

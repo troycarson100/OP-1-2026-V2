@@ -63,9 +63,16 @@ namespace bridge
             case P::ColorDrive:      suffix = "colorDrive"; break;
             case P::ColorTone:       suffix = "colorTone"; break;
             case P::ColorMix:        suffix = "colorMix"; break;
-            case P::SpaceAmount:     suffix = "spaceAmount"; break;
-            case P::SpaceFeedback:   suffix = "spaceFeedback"; break;
-            case P::SpaceMix:        suffix = "spaceMix"; break;
+            case P::SpaceDelayAmount:   suffix = "spaceDelayAmt"; break;
+            case P::SpaceDelayTime:     suffix = "spaceDelayTime"; break;
+            case P::SpaceReverbAmount:  suffix = "spaceReverbAmt"; break;
+            case P::SpaceReverbSize:    suffix = "spaceReverbSize"; break;
+            case P::SpaceDelayFeedback: suffix = "spaceDelayFb"; break;
+            case P::SpaceSpread:        suffix = "spaceSpread"; break;
+            case P::SpaceDamp:          suffix = "spaceDamp"; break;
+            case P::SpaceReverbDecay:   suffix = "spaceReverbDecay"; break;
+            case P::SpaceDelayTimeMode: suffix = "spaceDelayTimeMode"; break;
+            case P::SpaceFreeze:        suffix = "spaceFreeze"; break;
             case P::CaptureArm:      suffix = "captureArm"; break;
             case P::FilterKey:       suffix = "filterKey"; break;
             case P::MixEqLowGain:    suffix = "mixEqLow"; break;
@@ -116,6 +123,8 @@ public:
 
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
+
+    void requestSpaceClear (int trackIndex) { engine_.requestSpaceClear (trackIndex); }
 
     juce::AudioProcessorValueTreeState& getValueTreeState() { return apvts_; }
     sculpt::Engine& getEngine()                              { return engine_; }
