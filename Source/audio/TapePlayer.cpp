@@ -10,7 +10,8 @@ namespace sculpt
 
 namespace
 {
-    constexpr int kWrapBlendSamples = 72; // ~1.6 ms @ 44.1k
+    // Long enough to hide a large jump when loop in/out moves past the playhead during playback.
+    constexpr int kWrapBlendSamples = 384; // ~8.7 ms @ 44.1k
 
     inline float epCos (float u) { return std::cos (0.5f * kPi * u); }
     inline float epSin (float u) { return std::sin (0.5f * kPi * u); }
@@ -19,9 +20,9 @@ namespace
 void TapePlayer::prepare (double sampleRate)
 {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
-    // ~2 ms toward new loop in/out — kills zipper when dragging loop points while playing.
-    loopStartSm_.prepare (sampleRate_, 0.002f);
-    loopEndSm_.prepare (sampleRate_, 0.002f);
+    // ~12 ms toward new loop in/out — slower boundary motion while dragging reduces hard jumps.
+    loopStartSm_.prepare (sampleRate_, 0.012f);
+    loopEndSm_.prepare (sampleRate_, 0.012f);
     loopStartSm_.snap (loopStartTarget_);
     loopEndSm_.snap (loopEndTarget_);
     reset();
@@ -126,24 +127,40 @@ void TapePlayer::seekNormalized (float position01, int numFrames, float loopStar
 bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regionEnd,
                                    double regionLen) noexcept
 {
-    if (pos >= regionStart && pos < regionEnd)
+    if (regionLen < 2.0)
         return true;
-    if (! loopMode_)
-    {
-        playing_ = false;
-        return false;
-    }
+
+    // Only wrap at the leading edge in the current travel direction. If a loop boundary is
+    // dragged past the playhead from the trailing side, keep playing instead of force-jumping
+    // (force-jumps every block while dragging are what cause the record-scratch artifact).
     if (speed_ >= 0.0f)
     {
-        wrapBlendFromPos_ = std::clamp (regionEnd - 2.0, regionStart + 0.25, regionEnd - 0.25);
-        pos = regionStart + std::fmod (pos - regionStart + regionLen, regionLen);
+        if (pos >= regionEnd)
+        {
+            if (! loopMode_)
+            {
+                playing_ = false;
+                return false;
+            }
+            wrapBlendFromPos_ = pos;                       // old tail continues from here
+            wrapBlendRemain_  = kWrapBlendSamples;
+            pos = regionStart + std::fmod (pos - regionEnd, regionLen);
+        }
     }
     else
     {
-        wrapBlendFromPos_ = std::clamp (regionStart + 2.0, regionStart + 0.25, regionEnd - 0.25);
-        pos = regionEnd - std::fmod (regionEnd - pos + regionLen, regionLen);
+        if (pos < regionStart)
+        {
+            if (! loopMode_)
+            {
+                playing_ = false;
+                return false;
+            }
+            wrapBlendFromPos_ = pos;
+            wrapBlendRemain_  = kWrapBlendSamples;
+            pos = regionEnd - std::fmod (regionStart - pos, regionLen);
+        }
     }
-    wrapBlendRemain_ = kWrapBlendSamples;
     return true;
 }
 
@@ -268,6 +285,7 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
                 buffer.getSampleLinear (rightChannel, static_cast<float> (wrapBlendFromPos_)) * level_;
             rawL = c * fromL + s * rawL;
             rawR = c * fromR + s * rawR;
+            wrapBlendFromPos_ += static_cast<double> (speed_); // old tail keeps moving
             --wrapBlendRemain_;
         }
         outL[i] += rawL;

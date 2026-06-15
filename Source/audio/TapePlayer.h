@@ -68,7 +68,7 @@ private:
     float  scrubOutLp2R_   = 0.0f;
     bool   scrubLpPrimed_  = false;
 
-    // Equal-power blend for ~1.5 ms after a loop wrap (reduces boundary clicks).
+    // Equal-power blend after a forced wrap (moving loop past the playhead, natural wrap, etc.).
     int    wrapBlendRemain_ = 0;
     double wrapBlendFromPos_ = 0.0;
 };
