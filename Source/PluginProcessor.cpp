@@ -2,7 +2,6 @@
 #include "PluginEditor.h"
 #include "util/Constants.h"
 #include "core/FilterScales.h"
-#include "modulation/ModTypes.h"
 
 #include <algorithm>
 #include <cmath>
@@ -57,27 +56,11 @@ namespace
         layout.add (std::make_unique<juce::AudioParameterChoice> (
             juce::ParameterID { idString, 1 }, name, choices, choiceDefaultIndex (id, n)));
     }
-
-    void migrateLegacyModInputRouting (sculpt::ModPatch& p)
-    {
-        for (int t = 0; t < sculpt::kNumTracks; ++t)
-            for (int s = 0; s < sculpt::kModSlotsPerTrack; ++s)
-            {
-                auto& sl = p.slots[static_cast<size_t> (t)][static_cast<size_t> (s)];
-                if (sl.kind != sculpt::ModulatorKind::InputEnvelope)
-                    continue;
-                const uint8_t v = sl.inputEnvSource;
-                if (v < 2u)
-                    sl.inputEnvSource = (v == 0u ? sculpt::kInputEnvRouteMainInput
-                                                 : sculpt::kInputEnvRouteHostSidechain);
-            }
-    }
 }
 
 SculptSamplerAudioProcessor::SculptSamplerAudioProcessor()
     : AudioProcessor (BusesProperties()
                           .withInput ("Input", juce::AudioChannelSet::stereo(), true)
-                          .withInput ("Sidechain", juce::AudioChannelSet::stereo(), false)
                           .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts_ (*this, nullptr, "PARAMS", createParameterLayout())
 {
@@ -226,19 +209,10 @@ bool SculptSamplerAudioProcessor::isBusesLayoutSupported (const BusesLayout& lay
     if (out != juce::AudioChannelSet::stereo() && out != juce::AudioChannelSet::mono())
         return false;
 
-    const auto mainIn = layouts.getChannelSet (true, 0);
-    if (mainIn != juce::AudioChannelSet::stereo()
-        && mainIn != juce::AudioChannelSet::mono()
-        && ! mainIn.isDisabled())
-        return false;
-
-    const auto sideIn = layouts.getChannelSet (true, 1);
-    if (! sideIn.isDisabled()
-        && sideIn != juce::AudioChannelSet::stereo()
-        && sideIn != juce::AudioChannelSet::mono())
-        return false;
-
-    return true;
+    const auto in = layouts.getMainInputChannelSet();
+    return in == juce::AudioChannelSet::stereo()
+        || in == juce::AudioChannelSet::mono()
+        || in.isDisabled();
 }
 
 void SculptSamplerAudioProcessor::syncParametersToEngine()
@@ -325,35 +299,14 @@ void SculptSamplerAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer
         engine_.setModPatch (modPatch_);
     }
 
-    auto mainIn = getBusBuffer (buffer, true, 0);
-    auto outBus = getBusBuffer (buffer, false, 0);
-
-    float* mainPtrs[2] = {
-        mainIn.getNumChannels() > 0 ? mainIn.getWritePointer (0) : nullptr,
-        mainIn.getNumChannels() > 1 ? mainIn.getWritePointer (1) : nullptr
-    };
-    if (mainIn.getNumChannels() == 1)
-        mainPtrs[1] = mainPtrs[0];
-
-    float* outPtrs[2] = {
-        outBus.getNumChannels() > 0 ? outBus.getWritePointer (0) : nullptr,
-        outBus.getNumChannels() > 1 ? outBus.getWritePointer (1) : nullptr
-    };
-    if (outBus.getNumChannels() == 1)
-        outPtrs[1] = outPtrs[0];
-
-    auto sideBus = getBusBuffer (buffer, true, 1);
-    const float* sideRead[2] = { nullptr, nullptr };
-    int          sideCh       = 0;
-    if (sideBus.getNumChannels() > 0)
-    {
-        sideRead[0] = sideBus.getReadPointer (0);
-        sideRead[1] = sideBus.getNumChannels() > 1 ? sideBus.getReadPointer (1) : sideRead[0];
-        sideCh      = sideBus.getNumChannels() > 1 ? 2 : 1;
-    }
-
-    engine_.process (mainPtrs, (sideCh > 0 ? sideRead : nullptr), sideCh,
-                     outPtrs, mainIn.getNumChannels(), outBus.getNumChannels(), buffer.getNumSamples());
+    // In-place: the engine reads inputs (capture/env-follow) before it
+    // overwrites the same buffers with the mixed output.
+    float* const* channels = buffer.getArrayOfWritePointers();
+    engine_.process (const_cast<float**> (channels),
+                     const_cast<float**> (channels),
+                     getTotalNumInputChannels(),
+                     getTotalNumOutputChannels(),
+                     buffer.getNumSamples());
 }
 
 bool SculptSamplerAudioProcessor::loadAudioFileIntoTrack (int trackIndex, const juce::File& file)
@@ -452,7 +405,6 @@ void SculptSamplerAudioProcessor::getStateInformation (juce::MemoryBlock& destDa
         }
         const juce::MemoryBlock raw (&copy, sizeof (copy));
         xml->setAttribute ("sculptModBlob", juce::Base64::toBase64 (raw.getData(), raw.getSize()));
-        xml->setAttribute ("sculptModRouteFmt", 1);
         xml->setAttribute ("manualBpm", manualBpm_.load (std::memory_order_relaxed));
         xml->setAttribute ("manualTempoOverride", manualTempoOverride_.load (std::memory_order_relaxed) ? 1 : 0);
         copyXmlToBinary (*xml, destData);
@@ -479,8 +431,6 @@ void SculptSamplerAudioProcessor::setStateInformation (const void* data, int siz
             {
                 const juce::ScopedLock sl (modPatchLock_);
                 std::memcpy (&modPatch_, mos.getData(), sizeof (modPatch_));
-                if (xml->getIntAttribute ("sculptModRouteFmt", 0) < 1)
-                    migrateLegacyModInputRouting (modPatch_);
             }
         }
     }

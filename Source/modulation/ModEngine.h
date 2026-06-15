@@ -9,7 +9,6 @@
 #include "ModTypes.h"
 #include "RandomModulator.h"
 #include "../core/ParameterState.h"
-#include "../util/Constants.h"
 
 namespace sculpt
 {
@@ -31,22 +30,16 @@ public:
     // Bit i = track t slot s where i = t * kModSlotsPerTrack + s
     void triggerAdsr (int track, int slot);
 
-    // inputEnvMain01 / inputEnvSide01: 0..1 envelope followers (main input vs host sidechain).
-    // trackInputEnv01: per-track bus envelope from previous audio block (see Engine).
-    void apply (ParameterState& params, float inputEnvMain01, float inputEnvSide01,
-                const std::array<float, kNumTracks>& trackInputEnv01, int numSamples,
+    // inputEnv01: 0..1 envelope follower. Updates sources then sums mappings.
+    void apply (ParameterState& params, float inputEnv01, int numSamples,
                 double beatAtBlockStart, double bpm, double sampleRate);
 
     // Fills oscilloscope snapshot for hardware LCD (read-only; no extra DSP state).
-    // overlayPeaks01: optional peak waveform for InputEnvelope (same bin count as carrier); nullptr skips.
-    void writeModLcdSnapshot (int track, int slot, float inputEnvMain01, float inputEnvSide01,
-                              const std::array<float, kNumTracks>& trackInputEnv01,
-                              const std::array<float, kMaterialWaveformBins>* overlayPeaks01,
-                              double beatAtEnd, ModLcdSnapshot& out) const;
+    void writeModLcdSnapshot (int track, int slot, float inputEnv01, double beatAtEnd,
+                            ModLcdSnapshot& out) const;
 
 private:
-    float sourceValue (int track, int slot, float inputEnvMain01, float inputEnvSide01,
-                       const std::array<float, kNumTracks>& trackInputEnv01, int numSamples,
+    float sourceValue (int track, int slot, float inputEnv01, int numSamples,
                        double beatAtBlockStart, double beatAtBlockEnd);
 
     ModPatch live_;

@@ -32,10 +32,8 @@ public:
     void reset();
 
     // Real-time safe after prepare(). Splits oversized host blocks internally.
-    // mainInputOutput: track 0 input (read then written in-place when outputs alias this buffer).
-    // sidechainInputs: optional read-only host sidechain bus (nullptr / 0 ch = disconnected).
-    void process (float** mainInputOutput, const float* const* sidechainInputs, int numSidechainChannels,
-                  float** outputs, int numInputChannels, int numOutputChannels, int numSamples);
+    void process (float** inputs, float** outputs,
+                  int numInputChannels, int numOutputChannels, int numSamples);
 
     // Global parameters set directly; track parameters go to the selected track.
     void  setParameter (ParameterId id, float normalizedValue);
@@ -72,10 +70,6 @@ public:
     void setGranularEncoderPage (int pageIndex);
     int  getGranularEncoderPage() const;
 
-    // Mod mapping UI: two 8-encoder banks per mapping target (same layout idea as Granular 1/2).
-    void setModEncoderPage (int pageIndex);
-    int  getModEncoderPage() const;
-
     void        setModPatch (const ModPatch& patch);
     const ModPatch& getModPatch() const;
     void        triggerModAdsr (int trackIndex, int slotIndex);
@@ -108,20 +102,14 @@ private:
     float warpEffectiveSpeedRatio (int trackIndex) const;
     bool trackIsWarpMode (int trackIndex) const;
     int  findReferenceWarpPlayingTrack (int excludeTrack) const;
-    void updateModulation (float** inputs, int numInputChannels,
-                           const float* const* sidechainInputs, int numSidechainChannels,
-                           const std::array<float, kNumTracks>& trackBusEnvLag01,
-                           int offset, int numSamples, double beatAtBlockStart);
-    void processChunk (float** inputs, const float* const* sidechainInputs, int numSidechainChannels,
-                       float** outputs, int numInputChannels, int numOutputChannels,
+    void updateModulation (float** inputs, int numInputChannels, int offset, int numSamples,
+                           double beatAtBlockStart);
+    void processChunk (float** inputs, float** outputs,
+                       int numInputChannels, int numOutputChannels,
                        int offset, int numSamples);
     void updateScreenModel();
 
     void fillMixBusWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope) const;
-
-    void captureModRouteOverlay (float** inputs, int numInputChannels,
-                                 const float* const* sidechainInputs, int numSidechainChannels,
-                                 int offset, int numSamples);
 
     ParameterState params_;
     Clock          clock_;
@@ -132,8 +120,6 @@ private:
     Mixer mixer_;
 
     EnvelopeFollower inputEnvelope_;
-    EnvelopeFollower sidechainEnvelope_;
-    std::array<EnvelopeFollower, kNumTracks> trackBusEnvelopes_ {};
     MacroControls    macros_;
     ModEngine        modEngine_;
 
@@ -143,7 +129,6 @@ private:
     // Track bus scratch buffers (fixed size, allocated as members).
     std::array<std::array<float, kMaxBlockSize>, kNumTracks> busL_ {}, busR_ {};
     std::array<float, kNumTracks> trackPeaks_ {};
-    std::array<float, kMaterialWaveformBins> modRouteOverlayBins_ {};
     float masterPeakL_ = 0.0f, masterPeakR_ = 0.0f;
 
     int lastBusChunkSamples_ = 0;
@@ -168,7 +153,6 @@ private:
 
     std::atomic<int> modLcdSlot_ { 0 };
     std::atomic<int> granularEncoderPage_ { 0 };
-    std::atomic<int> modEncoderPage_ { 0 };
 };
 
 } // namespace sculpt
