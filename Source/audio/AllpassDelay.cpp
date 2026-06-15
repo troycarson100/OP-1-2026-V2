@@ -59,6 +59,13 @@ float DelayLine::process (float x)
     return y;
 }
 
+float DelayLine::processVar (float x, float delaySamples)
+{
+    const float y = readFrac (delaySamples);
+    write (x);
+    return y;
+}
+
 // ---------------- AllpassDelay ----------------
 
 void AllpassDelay::prepare (int maxLenSamples)
@@ -100,9 +107,14 @@ float AllpassDelay::readAt (float samplesBehind) const
 
 float AllpassDelay::processMod (float x, float modSamples)
 {
-    const float d  = readFrac (delay_ + modSamples); // w[n-k]
-    const float wn = x - g_ * d;                      // recursive node
-    const float y  = g_ * wn + d;                     // all-pass output
+    return processVarMod (x, delay_, modSamples);
+}
+
+float AllpassDelay::processVarMod (float x, float delaySamples, float modSamples)
+{
+    const float d  = readFrac (delaySamples + modSamples); // w[n-k]
+    const float wn = x - g_ * d;                            // recursive node
+    const float y  = g_ * wn + d;                           // all-pass output
 
     buf_[static_cast<size_t> (write_)] = sanitize (wn);
     if (++write_ >= size_)

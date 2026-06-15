@@ -32,7 +32,7 @@ void SpaceDelay::prepare (double sampleRate)
     wowDepth_     = static_cast<float> (sampleRate_) * 0.0016f; // ~1.6 ms drift
     flutterDepth_ = static_cast<float> (sampleRate_) * 0.0003f; // ~0.3 ms jitter
 
-    delaySm_.prepare (sampleRate_, 0.04f);
+    delaySm_.prepare (sampleRate_, 0.12f);
     delaySm_.snap (static_cast<float> (0.05 * sampleRate_));
 
     reset();

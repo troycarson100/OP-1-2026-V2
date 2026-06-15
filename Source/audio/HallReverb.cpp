@@ -56,6 +56,15 @@ void HallReverb::prepare (double sampleRate)
     apL2_.setCoeff (kDecayDiff2);
     apR2_.setCoeff (kDecayDiff2);
 
+    baseApL1_ = static_cast<float> (kApL1) * srScale_;
+    baseApR1_ = static_cast<float> (kApR1) * srScale_;
+    baseApL2_ = static_cast<float> (kApL2) * srScale_;
+    baseApR2_ = static_cast<float> (kApR2) * srScale_;
+    baseDL1_  = static_cast<float> (kDL1)  * srScale_;
+    baseDR1_  = static_cast<float> (kDR1)  * srScale_;
+    baseDL2_  = static_cast<float> (kDL2)  * srScale_;
+    baseDR2_  = static_cast<float> (kDR2)  * srScale_;
+
     bandwidth_.prepare (sampleRate_);
     bandwidth_.setCutoffHz (11000.0f);
     dampL_.prepare (sampleRate_);
@@ -66,7 +75,11 @@ void HallReverb::prepare (double sampleRate)
     lfoIncL_ = kTwoPi * 0.9f / static_cast<float> (sampleRate_);
     lfoIncR_ = kTwoPi * 1.3f / static_cast<float> (sampleRate_);
 
-    setSize (0.8f);
+    // ~0.12 s glide keeps Size sweeps click-free (a smooth pitch slew, not a tear).
+    sizeSm_.prepare (sampleRate_, 0.12f);
+    sizeSm_.snap (0.8f);
+    sizeTarget_ = 0.8f;
+
     setRt60 (2.0f);
     reset();
 }
@@ -86,18 +99,9 @@ void HallReverb::reset()
 void HallReverb::setSize (float sizeScale)
 {
     // Receives the line-length scale directly (see map::spaceReverbSizeLineScale).
-    sizeScale_ = std::clamp (sizeScale, 0.30f, kMaxSizeScale);
-    const float s = srScale_ * sizeScale_;
-
-    apL1_.setDelaySamples (static_cast<float> (kApL1) * s);
-    apR1_.setDelaySamples (static_cast<float> (kApR1) * s);
-    apL2_.setDelaySamples (static_cast<float> (kApL2) * s);
-    apR2_.setDelaySamples (static_cast<float> (kApR2) * s);
-    dL1_.setDelaySamples (static_cast<float> (kDL1) * s);
-    dR1_.setDelaySamples (static_cast<float> (kDR1) * s);
-    dL2_.setDelaySamples (static_cast<float> (kDL2) * s);
-    dR2_.setDelaySamples (static_cast<float> (kDR2) * s);
-
+    // Smoothed per-sample in processBlock so Size sweeps glide instead of tearing.
+    sizeTarget_ = std::clamp (sizeScale, 0.30f, kMaxSizeScale);
+    sizeSm_.setTarget (sizeTarget_);
     recomputeDecay();
 }
 
@@ -108,7 +112,7 @@ void HallReverb::recomputeDecay()
         decay_ = 0.9999f;
         return;
     }
-    const float s        = srScale_ * sizeScale_;
+    const float s        = srScale_ * sizeTarget_;
     const double loopLen  = static_cast<double> (kApL1 + kDL1 + kApL2 + kDL2) * static_cast<double> (s);
     const double loopTime = std::max (1.0e-4, loopLen / sampleRate_);
     const double g        = std::exp (-6.90776 * loopTime / std::max (0.05, static_cast<double> (rt60_)));
@@ -138,10 +142,11 @@ void HallReverb::setFreeze (bool freeze)
 
 void HallReverb::processBlock (const float* monoIn, float* wetL, float* wetR, int numSamples)
 {
-    const float s = srScale_ * sizeScale_;
-
     for (int n = 0; n < numSamples; ++n)
     {
+        const float scale = sizeSm_.next();         // smoothed size scale (click-free)
+        const float tapS  = srScale_ * scale;       // tap-position scale (base @ 29761)
+
         float x = bandwidth_.processLowpass (monoIn[static_cast<size_t> (n)] * inGain_);
         x = inDiff_[0].process (x);
         x = inDiff_[1].process (x);
@@ -157,30 +162,30 @@ void HallReverb::processBlock (const float* monoIn, float* wetL, float* wetR, in
         const float oldZR = zR_;
 
         float l = x + decay_ * oldZR;
-        l = apL1_.processMod (l, modL);
-        l = dL1_.process (l);
+        l = apL1_.processVarMod (l, baseApL1_ * scale, modL);
+        l = dL1_.processVar (l, baseDL1_ * scale);
         l = dampL_.processLowpass (l);
         l *= decay_;
-        l = apL2_.process (l);
-        zL_ = dL2_.process (l);
+        l = apL2_.processVarMod (l, baseApL2_ * scale, 0.0f);
+        zL_ = dL2_.processVar (l, baseDL2_ * scale);
 
         float r = x + decay_ * oldZL;
-        r = apR1_.processMod (r, modR);
-        r = dR1_.process (r);
+        r = apR1_.processVarMod (r, baseApR1_ * scale, modR);
+        r = dR1_.processVar (r, baseDR1_ * scale);
         r = dampR_.processLowpass (r);
         r *= decay_;
-        r = apR2_.process (r);
-        zR_ = dR2_.process (r);
+        r = apR2_.processVarMod (r, baseApR2_ * scale, 0.0f);
+        zR_ = dR2_.processVar (r, baseDR2_ * scale);
 
-        float yL = dR1_.readAt (266.0f * s) + dR1_.readAt (2974.0f * s)
-                 - apR2_.readAt (1913.0f * s) + dR2_.readAt (1996.0f * s)
-                 - dL1_.readAt (1990.0f * s) - apL2_.readAt (187.0f * s)
-                 - dL2_.readAt (1066.0f * s);
+        float yL = dR1_.readAt (266.0f * tapS) + dR1_.readAt (2974.0f * tapS)
+                 - apR2_.readAt (1913.0f * tapS) + dR2_.readAt (1996.0f * tapS)
+                 - dL1_.readAt (1990.0f * tapS) - apL2_.readAt (187.0f * tapS)
+                 - dL2_.readAt (1066.0f * tapS);
 
-        float yR = dL1_.readAt (353.0f * s) + dL1_.readAt (3627.0f * s)
-                 - apL2_.readAt (1228.0f * s) + dL2_.readAt (2673.0f * s)
-                 - dR1_.readAt (2111.0f * s) - apR2_.readAt (335.0f * s)
-                 - dR2_.readAt (121.0f * s);
+        float yR = dL1_.readAt (353.0f * tapS) + dL1_.readAt (3627.0f * tapS)
+                 - apL2_.readAt (1228.0f * tapS) + dL2_.readAt (2673.0f * tapS)
+                 - dR1_.readAt (2111.0f * tapS) - apR2_.readAt (335.0f * tapS)
+                 - dR2_.readAt (121.0f * tapS);
 
         constexpr float outGain = 0.6f;
         yL *= outGain;

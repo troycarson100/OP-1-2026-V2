@@ -20,6 +20,7 @@ public:
     void setDelaySamples (float d);
 
     float process (float x);                 // y = x delayed by delay_
+    float processVar (float x, float delaySamples); // y = x delayed by an explicit length
     float readAt (float samplesBehind) const; // interpolated tap (read-only)
     void  write (float x);                    // raw push (advances head)
 
@@ -47,6 +48,7 @@ public:
 
     float process (float x)               { return processMod (x, 0.0f); }
     float processMod (float x, float modSamples);
+    float processVarMod (float x, float delaySamples, float modSamples); // explicit length + mod
     float readAt (float samplesBehind) const; // tap the internal delay memory
 
 private:

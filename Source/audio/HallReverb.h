@@ -3,6 +3,7 @@
 #include <array>
 #include "OnePole.h"
 #include "AllpassDelay.h"
+#include "../util/SmoothedValue.h"
 
 namespace sculpt
 {
@@ -40,6 +41,10 @@ private:
     AllpassDelay apL2_, apR2_; // decay diffusion 2
     DelayLine    dL1_, dL2_, dR1_, dR2_;
 
+    // Base line lengths at the current sample rate (scale = 1.0), in samples.
+    float baseApL1_ = 0.0f, baseApR1_ = 0.0f, baseApL2_ = 0.0f, baseApR2_ = 0.0f;
+    float baseDL1_  = 0.0f, baseDR1_  = 0.0f, baseDL2_  = 0.0f, baseDR2_  = 0.0f;
+
     float lfoPhaseL_ = 0.0f;
     float lfoPhaseR_ = 0.31f;
     float lfoIncL_   = 0.0f;
@@ -48,12 +53,13 @@ private:
 
     float zL_ = 0.0f, zR_ = 0.0f; // cross-feedback state (branch ends)
 
-    float rt60_      = 2.0f;
-    float sizeScale_ = 1.0f;
-    float decay_     = 0.5f;
-    float width_     = 0.5f;
-    float inGain_    = 1.0f;
-    bool  freeze_    = false;
+    SmoothedValue sizeSm_;        // per-sample size-scale smoothing (click-free knob)
+    float rt60_       = 2.0f;
+    float sizeTarget_ = 1.0f;
+    float decay_      = 0.5f;
+    float width_      = 0.5f;
+    float inGain_     = 1.0f;
+    bool  freeze_     = false;
 };
 
 } // namespace sculpt
