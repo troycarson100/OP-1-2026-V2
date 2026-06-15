@@ -723,6 +723,9 @@ void Engine::updateScreenModel()
         v.reverbWet01        = sp.getReverbWet01();
         v.frozen             = params_.effective (selected, ParameterId::SpaceFreeze) > 0.5f;
     }
+
+    if (selectedPage_ == Page::Color)
+        tracks_[static_cast<size_t> (selected)].getEngine().getColor().updateVisual (screen_.color);
 }
 
 const SampleBuffer& Engine::getTrackMaterialBuffer (int trackIndex) const

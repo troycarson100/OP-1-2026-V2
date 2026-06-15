@@ -32,6 +32,20 @@ struct GrainPatternPresetSnapshot
     std::array<float, 16> stepAccentNorm {};       // 0..1 LED row (from gain accent shape)
 };
 
+// Color page LCD: DEFORM visualization state (audio thread writes each block).
+struct ColorVisualSnapshot
+{
+    float drive01      = 0.15f;
+    float crush01      = 0.0f;
+    float tilt01       = 0.5f;
+    float compress01   = 0.0f;
+    float noise01      = 0.0f;
+    float noiseTone01  = 0.5f;
+    float wet01        = 0.3f;
+    float lowBandLevel  = 0.0f; // live post-drive low-band peak (for orb animation)
+    float highBandLevel = 0.0f; // live post-drive high-band peak (for orb animation)
+};
+
 // Space page LCD: delay + reverb visualization state (audio thread writes each block).
 struct SpaceVisualSnapshot
 {
@@ -136,6 +150,9 @@ struct ScreenModel
 
     // Mod page: oscilloscope-style source preview (see ModLcdSnapshot).
     ModLcdSnapshot modLcd {};
+
+    // Color page: DEFORM visualization (see ColorVisualSnapshot).
+    ColorVisualSnapshot color {};
 
     // Space page: delay + reverb visualization (see SpaceVisualSnapshot).
     SpaceVisualSnapshot space {};

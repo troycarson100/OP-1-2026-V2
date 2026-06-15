@@ -35,9 +35,10 @@ namespace
           ParameterId::FilterScale,     ParameterId::FilterMode,
           ParameterId::FilterKey,       ParameterId::FilterMix,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
-        // Color
-        { ParameterId::ColorDrive, ParameterId::ColorTone, ParameterId::ColorMix,
-          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
+        // Color (DEFORM): drive, crush, tilt, compress, noise, noise decay, noise tone, wet
+        { ParameterId::ColorDrive, ParameterId::ColorCrush, ParameterId::ColorTilt,
+          ParameterId::ColorCompress, ParameterId::ColorNoise, ParameterId::ColorNoiseDecay,
+          ParameterId::ColorNoiseTone, ParameterId::ColorWet,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
         // Space (Vast-style)
         { ParameterId::SpaceDelayAmount,   ParameterId::SpaceDelayTime,     ParameterId::SpaceReverbAmount,

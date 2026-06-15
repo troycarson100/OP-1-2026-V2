@@ -212,8 +212,13 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     }
 
     engine_.getColor().setParams (get (ParameterId::ColorDrive),
-                                  get (ParameterId::ColorTone),
-                                  get (ParameterId::ColorMix));
+                                  get (ParameterId::ColorCrush),
+                                  get (ParameterId::ColorTilt),
+                                  get (ParameterId::ColorCompress),
+                                  get (ParameterId::ColorNoise),
+                                  get (ParameterId::ColorNoiseDecay),
+                                  get (ParameterId::ColorNoiseTone),
+                                  get (ParameterId::ColorWet));
 
     engine_.getSpace().setParams (get (ParameterId::SpaceDelayAmount),
                                   get (ParameterId::SpaceDelayTime),

@@ -708,6 +708,109 @@ namespace
         g.setColour (kAccent.withAlpha (0.25f + 0.65f * compReduction01));
         g.fillRoundedRectangle (grFill, 2.0f);
     }
+
+    // ---- Color / DEFORM page visual ----
+    // Two reactive orbs: left = low band (warm/orange), right = high band (cool/teal).
+    // Size/glow driven by live audio levels, drive, tilt. Crush adds grid overlay; noise adds rings.
+    void drawColorVisual (juce::Graphics& g, juce::Rectangle<int> areaInt,
+                          const sculpt::ScreenModel& screen)
+    {
+        const auto& c   = screen.color;
+        const auto  area = areaInt.toFloat();
+
+        g.setColour (kLcdWaveformBg);
+        g.fillRoundedRectangle (area, 3.0f);
+
+        if (area.getWidth() < 8.0f || area.getHeight() < 8.0f)
+            return;
+
+        const float w  = area.getWidth();
+        const float h  = area.getHeight();
+        const float cx = area.getCentreX();
+        const float cy = area.getCentreY();
+
+        // Dividing line at the 650 Hz crossover.
+        g.setColour (kText.withAlpha (0.12f));
+        g.drawLine (cx, area.getY() + 4.0f, cx, area.getBottom() - 4.0f, 1.0f);
+        g.setFont (juce::FontOptions (8.0f));
+        g.setColour (kText.withAlpha (0.22f));
+        g.drawText ("650Hz", juce::Rectangle<float> (cx - 16.0f, area.getBottom() - 13.0f, 32.0f, 10.0f),
+                    juce::Justification::centred);
+
+        const float baseR     = std::min (w * 0.18f, h * 0.38f);
+        const float wetFade   = 0.3f + c.wet01 * 0.7f;
+        const float driveBoost = 1.0f + c.drive01 * 0.5f;
+        // Compress squashes both orbs vertically.
+        const float squash    = 1.0f - c.compress01 * 0.30f;
+
+        // Low-band orb (left, orange/warm).
+        const float lowScale = (0.4f + c.tilt01 * 1.2f) * (0.55f + c.lowBandLevel * 0.9f) * driveBoost;
+        const float lowR     = baseR * juce::jlimit (0.15f, 1.9f, lowScale) * wetFade;
+        const float lowCx    = area.getX() + w * 0.28f;
+
+        for (int layer = 3; layer >= 0; --layer)
+        {
+            const float lr    = lowR * (1.0f + static_cast<float> (layer) * 0.55f);
+            const float alpha = (0.05f + (3 - layer) * 0.07f) * wetFade;
+            g.setColour (kAccent.withAlpha (alpha));
+            g.fillEllipse (lowCx - lr, cy - lr * squash, lr * 2.0f, lr * squash * 2.0f);
+        }
+        g.setColour (kAccent.withAlpha (0.82f * wetFade));
+        g.fillEllipse (lowCx - lowR * 0.55f, cy - lowR * squash * 0.55f,
+                       lowR * 1.1f, lowR * squash * 1.1f);
+
+        // High-band orb (right, teal/cyan).
+        const float highScale = (0.4f + (1.0f - c.tilt01) * 1.2f) * (0.55f + c.highBandLevel * 0.9f) * driveBoost;
+        const float highR     = baseR * juce::jlimit (0.15f, 1.9f, highScale) * wetFade;
+        const float highCx    = area.getX() + w * 0.72f;
+
+        for (int layer = 3; layer >= 0; --layer)
+        {
+            const float lr    = highR * (1.0f + static_cast<float> (layer) * 0.55f);
+            const float alpha = (0.05f + (3 - layer) * 0.07f) * wetFade;
+            g.setColour (kWaveformStroke.withAlpha (alpha));
+            g.fillEllipse (highCx - lr, cy - lr * squash, lr * 2.0f, lr * squash * 2.0f);
+        }
+        g.setColour (kWaveformStroke.withAlpha (0.82f * wetFade));
+        g.fillEllipse (highCx - highR * 0.55f, cy - highR * squash * 0.55f,
+                       highR * 1.1f, highR * squash * 1.1f);
+
+        // Crush grid: draw a cell overlay whose density increases with crush amount.
+        if (c.crush01 > 0.02f)
+        {
+            const int   gridN     = 4 + static_cast<int> (c.crush01 * 12.0f);  // 4..16 cells
+            const float cellW     = w / static_cast<float> (gridN);
+            const float cellH     = h / static_cast<float> (gridN);
+            const float crushAlpha = c.crush01 * 0.18f;
+            g.setColour (kText.withAlpha (crushAlpha));
+            for (int row = 0; row < gridN; ++row)
+                for (int col = 0; col < gridN; ++col)
+                    g.drawRect (area.getX() + static_cast<float> (col) * cellW,
+                                area.getY() + static_cast<float> (row) * cellH, cellW, cellH, 0.5f);
+        }
+
+        // Noise rings: halo around each orb; ring radius shifts with noiseTone.
+        if (c.noise01 > 0.02f)
+        {
+            const float noiseAlpha = c.noise01 * 0.55f;
+            const float ringOffset = 4.0f + c.noiseTone01 * 8.0f;
+
+            const float nrl = lowR  + ringOffset;
+            g.setColour (kAccent.withAlpha (noiseAlpha * 0.5f));
+            g.drawEllipse (lowCx - nrl, cy - nrl * squash, nrl * 2.0f, nrl * squash * 2.0f, 1.5f);
+
+            const float nrh = highR + ringOffset;
+            g.setColour (kWaveformStroke.withAlpha (noiseAlpha * 0.5f));
+            g.drawEllipse (highCx - nrh, cy - nrh * squash, nrh * 2.0f, nrh * squash * 2.0f, 1.5f);
+        }
+
+        // Page label.
+        g.setFont (juce::FontOptions (9.0f));
+        g.setColour (kText.withAlpha (0.35f));
+        g.drawText ("DEFORM", juce::Rectangle<float> (area.getX() + 4.0f, area.getY(), 60.0f, 14.0f),
+                    juce::Justification::centredLeft);
+    }
+
 } // namespace
 
 void InstrumentPanel::setWaveformEnvelope (const float* data, int numBins)
@@ -822,6 +925,7 @@ void InstrumentPanel::paint (juce::Graphics& g)
     const bool materialPage = (lcdPage == sculpt::Page::Material);
     const bool granularPage = (lcdPage == sculpt::Page::Granular);
     const bool filterPage   = (lcdPage == sculpt::Page::Filter);
+    const bool colorPage    = (lcdPage == sculpt::Page::Color);
     const bool modPage      = (lcdPage == sculpt::Page::Mod);
     const bool spacePage    = (lcdPage == sculpt::Page::Space);
     // Prefer editor page; also treat engine-reported page as Mixer so the LCD never falls through
@@ -944,6 +1048,11 @@ void InstrumentPanel::paint (juce::Graphics& g)
     {
         const int bandDisplayH = juce::jlimit (40, area.getHeight(), area.getHeight() - 4);
         drawFilterBands (g, area.removeFromTop (bandDisplayH), screen);
+    }
+    else if (colorPage)
+    {
+        const int visH = juce::jmax (60, area.getHeight() - 4);
+        drawColorVisual (g, area.removeFromTop (visH), screen);
     }
     else if (spacePage)
     {

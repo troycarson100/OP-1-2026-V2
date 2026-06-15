@@ -61,8 +61,13 @@ namespace bridge
             case P::FilterPitch:     suffix = "filterPitch"; break;
             case P::FilterScale:     suffix = "filterScale"; break;
             case P::ColorDrive:      suffix = "colorDrive"; break;
-            case P::ColorTone:       suffix = "colorTone"; break;
-            case P::ColorMix:        suffix = "colorMix"; break;
+            case P::ColorCrush:      suffix = "colorCrush"; break;
+            case P::ColorTilt:       suffix = "colorTilt"; break;
+            case P::ColorCompress:   suffix = "colorCompress"; break;
+            case P::ColorNoise:      suffix = "colorNoise"; break;
+            case P::ColorNoiseDecay: suffix = "colorNoiseDecay"; break;
+            case P::ColorNoiseTone:  suffix = "colorNoiseTone"; break;
+            case P::ColorWet:        suffix = "colorWet"; break;
             case P::SpaceDelayAmount:   suffix = "spaceDelayAmt"; break;
             case P::SpaceDelayTime:     suffix = "spaceDelayTime"; break;
             case P::SpaceReverbAmount:  suffix = "spaceReverbAmt"; break;

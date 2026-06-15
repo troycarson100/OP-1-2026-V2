@@ -60,8 +60,13 @@ enum class ParameterId : int
     FilterScale,   // Spectral: scale quantization (normalized index into FilterScale enum)
 
     ColorDrive,
-    ColorTone,
-    ColorMix,
+    ColorCrush,
+    ColorTilt,
+    ColorCompress,
+    ColorNoise,
+    ColorNoiseDecay,
+    ColorNoiseTone,
+    ColorWet,
 
     // Space (Vast-style): delay + hall reverb. Time mode: Straight / Dotted / Triplet / Free (choice).
     SpaceDelayAmount,
@@ -155,8 +160,13 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::FilterPitch:     return 0.5f;   // 0 semitones
         case ParameterId::FilterScale:     return 0.0f;   // Free
         case ParameterId::ColorDrive:      return 0.15f;
-        case ParameterId::ColorTone:       return 0.5f;
-        case ParameterId::ColorMix:        return 0.30f;
+        case ParameterId::ColorCrush:      return 0.0f;
+        case ParameterId::ColorTilt:       return 0.5f;   // center = equal low/high bands
+        case ParameterId::ColorCompress:   return 0.0f;
+        case ParameterId::ColorNoise:      return 0.0f;
+        case ParameterId::ColorNoiseDecay: return 0.35f;  // ~300ms decay
+        case ParameterId::ColorNoiseTone:  return 0.5f;   // ~1kHz
+        case ParameterId::ColorWet:        return 0.30f;
         case ParameterId::SpaceDelayAmount:   return 0.25f;
         case ParameterId::SpaceDelayTime:     return 0.35f;
         case ParameterId::SpaceReverbAmount:  return 0.20f;
@@ -328,7 +338,19 @@ namespace map
     // Spectral: semitone transpose [-24, +24].
     inline float filterPitchSemitones (float n) { return (n - 0.5f) * 48.0f; }
 
-    inline float colorDriveGain (float n)    { return 1.0f + n * 9.0f; }
+    // Drive: 1x to 16x gain for tanh waveshaper.
+    inline float colorDriveGain (float n)    { return 1.0f + n * 15.0f; }
+
+    // Tilt: per-band gain for the dual-band crossover (crossover at ~650 Hz).
+    // n < 0.5 emphasises the high band; n > 0.5 emphasises the low band.
+    inline float colorTiltLowGain (float n)  { return n < 0.5f ? 0.2f + n * 1.6f : 1.0f; }
+    inline float colorTiltHighGain (float n) { return n > 0.5f ? 0.2f + (1.0f - n) * 1.6f : 1.0f; }
+
+    // Noise envelope decay: 5 ms .. 2000 ms.
+    inline float colorNoiseDecayMs (float n) { return 5.0f + n * n * 1995.0f; }
+
+    // Noise bandpass centre frequency: 100 Hz .. 8000 Hz.
+    inline float colorNoiseCutoffHz (float n) { return 100.0f * std::pow (80.0f, clamp01 (n)); }
 
     // Delay feedback gain 0 .. ~0.92 (stability margin).
     inline float spaceDelayFeedbackGain (float n) { return clamp01 (n) * 0.92f; }
@@ -393,8 +415,6 @@ namespace map
             b *= (2.0 / 3.0);
         return std::max (1.0 / 128.0, b);
     }
-    inline float toneCutoffHz (float n)      { return 400.0f * std::pow (2.0f, n * 5.0f); }    // 400Hz .. ~12.8kHz
-
     // Mix EQ: +/- 12 dB per band; 0.5 = flat.
     inline float mixEqBandGainDb (float n)   { return (clamp01 (n) - 0.5f) * 24.0f; }
 
@@ -452,9 +472,14 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::FilterDecay:     return "Decay/Slope";
         case ParameterId::FilterPitch:     return "Pitch";
         case ParameterId::FilterScale:     return "Scale";
-        case ParameterId::ColorDrive:      return "Color Drive";
-        case ParameterId::ColorTone:       return "Color Tone";
-        case ParameterId::ColorMix:        return "Color Mix";
+        case ParameterId::ColorDrive:      return "Drive";
+        case ParameterId::ColorCrush:      return "Crush";
+        case ParameterId::ColorTilt:       return "Tilt";
+        case ParameterId::ColorCompress:   return "Compress";
+        case ParameterId::ColorNoise:      return "Noise";
+        case ParameterId::ColorNoiseDecay: return "Noise Decay";
+        case ParameterId::ColorNoiseTone:  return "Noise Tone";
+        case ParameterId::ColorWet:        return "Wet";
         case ParameterId::SpaceDelayAmount:   return "Delay";
         case ParameterId::SpaceDelayTime:     return "Time";
         case ParameterId::SpaceReverbAmount:  return "Reverb";
