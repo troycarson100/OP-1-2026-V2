@@ -1,5 +1,7 @@
 #pragma once
 
+#include "../util/SmoothedValue.h"
+
 namespace sculpt
 {
 
@@ -7,6 +9,9 @@ class SampleBuffer;
 
 // Loop/tape-style varispeed playback over a SampleBuffer.
 // Speed is a ratio (negative = reverse). Loop region is normalized 0..1.
+// Loop boundaries are smoothed toward targets to avoid zipper noise when
+// Loop Start/End move during playback; loop wrap uses a short equal-power
+// crossfade to reduce boundary clicks.
 // Real-time safe: reads only, no allocation.
 class TapePlayer
 {
@@ -40,26 +45,32 @@ private:
 
     double position_  = 0.0;   // in frames
     float  speed_     = 1.0f;
-    float  loopStart_ = 0.0f;
-    float  loopEnd_   = 1.0f;
+    float  loopStartTarget_ = 0.0f;
+    float  loopEndTarget_   = 1.0f;
     float  level_     = 1.0f;
     bool   loopMode_  = true;
     bool   playing_   = false;
 
     double sampleRate_ = 44100.0;
 
-    // Scrub-follow playback: smooth read head toward scrubTarget_ (no per-sample speed advance).
+    SmoothedValue loopStartSm_;
+    SmoothedValue loopEndSm_;
+
+    // While playing + user scrubs the playhead
     bool   followScrubTarget_ = false;
     double scrubTarget_       = 0.0;
     double smoothRead_        = 0.0;
     bool   smoothInit_        = false;
 
-    // Two-stage lowpass on scrubbed tape out: fast playhead + darker output (less zipper / grain).
     float  scrubOutLpL_    = 0.0f;
     float  scrubOutLpR_    = 0.0f;
     float  scrubOutLp2L_   = 0.0f;
     float  scrubOutLp2R_   = 0.0f;
     bool   scrubLpPrimed_  = false;
+
+    // Equal-power blend for ~1.5 ms after a loop wrap (reduces boundary clicks).
+    int    wrapBlendRemain_ = 0;
+    double wrapBlendFromPos_ = 0.0;
 };
 
 } // namespace sculpt

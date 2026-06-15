@@ -101,6 +101,8 @@ enum class ParameterId : int
 
     // When on, Tape Speed knob is quantized to 0, 0.25, 0.5, 0.75, 1 (normalized) for that track.
     TapeSpeedSnap,
+    // When on, Loop Start / Loop End snap to a fixed grid (see map::snapLoopPair01).
+    LoopSnapGrid,
 
     Count
 };
@@ -177,6 +179,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialTimeMode: return 0.0f;   // tape mode
         case ParameterId::SampleRootBpm:   return 0.4f;    // 120 BPM (40 + 0.4*200)
         case ParameterId::TapeSpeedSnap:   return 0.0f;   // off
+        case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
 }
@@ -221,6 +224,21 @@ namespace map
     inline float quantizeNormalizedQuarter (float n)
     {
         return std::round (clamp01 (n) * 4.0f) / 4.0f;
+    }
+
+    // Material loop in/out: snap to 1/64 grid in normalized 0..1 (64 steps including endpoints).
+    inline float snapLoopToGrid01 (float n01)
+    {
+        constexpr int kSteps = 64;
+        return std::round (clamp01 (n01) * static_cast<float> (kSteps)) / static_cast<float> (kSteps);
+    }
+
+    inline void snapLoopPair01 (float& loopStart01, float& loopEnd01)
+    {
+        loopStart01 = snapLoopToGrid01 (loopStart01);
+        loopEnd01   = snapLoopToGrid01 (loopEnd01);
+        if (loopEnd01 < loopStart01 + 0.01f)
+            loopEnd01 = clampf (loopStart01 + 0.01f, 0.0f, 1.0f);
     }
 
     // Warp varispeed multiplier: snap to 0.25 steps (e.g. 1.0, 1.25, 1.5 …), clamp to curve range.
@@ -459,6 +477,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MaterialTimeMode: return "Time Mode";
         case ParameterId::SampleRootBpm:   return "Root BPM";
         case ParameterId::TapeSpeedSnap:   return "Snap 1/4";
+        case ParameterId::LoopSnapGrid:    return "Loop Snap";
         default:                           return "Unknown";
     }
 }

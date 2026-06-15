@@ -144,7 +144,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
                     addChoiceParam (layout, pid, pname, modeChoices, id);
                 else if (id == ParameterId::SpaceDelayTimeMode)
                     addChoiceParam (layout, pid, pname, spaceTimeModeChoices, id);
-                else if (id == ParameterId::TapeSpeedSnap)
+                else if (id == ParameterId::TapeSpeedSnap || id == ParameterId::LoopSnapGrid)
                     layout.add (std::make_unique<juce::AudioParameterBool> (
                         juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
                 else if (id == ParameterId::SpaceFreeze)

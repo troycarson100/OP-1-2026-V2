@@ -25,7 +25,7 @@ namespace
         { ParameterId::MaterialLevel, ParameterId::TapeSpeed, ParameterId::MaterialTimeMode,
           ParameterId::SampleRootBpm, ParameterId::LoopStart, ParameterId::LoopEnd,
           ParameterId::CaptureArm, ParameterId::MaterialPlayhead,
-          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
+          ParameterId::LoopSnapGrid, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
         // Granular row unused for slots — use kGranularEncoderPage + granularEncoderPage in parameterForSlot.
         { kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
           kEmpty, kEmpty, kEmpty },

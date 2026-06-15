@@ -139,8 +139,13 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
             tapeKnob = map::quantizeNormalizedQuarter (tapeKnob);
         speedRatio = map::tapeSpeedRatio (tapeKnob);
     }
+    float loopLo = get (ParameterId::LoopStart);
+    float loopHi = get (ParameterId::LoopEnd);
+    if (get (ParameterId::LoopSnapGrid) > 0.5f)
+        map::snapLoopPair01 (loopLo, loopHi);
+
     tape.setSpeedRatio (speedRatio);
-    tape.setLoopRegion (get (ParameterId::LoopStart), get (ParameterId::LoopEnd));
+    tape.setLoopRegion (loopLo, loopHi);
     tape.setLevel (1.0f);
 
     if (materialPlayheadScrub)
@@ -150,8 +155,7 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     const bool seekTapeToPlayhead = materialPlayheadScrub
                                     || (! playing_ && ! ignoreStoppedPlayheadSeek_);
     if (seekTapeToPlayhead)
-        tape.seekNormalized (get (ParameterId::MaterialPlayhead), matFrames,
-                             get (ParameterId::LoopStart), get (ParameterId::LoopEnd));
+        tape.seekNormalized (get (ParameterId::MaterialPlayhead), matFrames, loopLo, loopHi);
 
     // Follow knob while gesturing (tape keeps running); seek above updates scrubTarget first.
     tape.setFollowScrubTarget (materialPlayheadScrub);
@@ -170,8 +174,8 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     gp.pulses     = map::grainPulses (get (ParameterId::GrainPulses), gp.steps);
     gp.rotate     = map::grainRotate (get (ParameterId::GrainRotate), gp.steps);
     gp.pitchQuantIndex = grainPitchQuantScaleIndex (get (ParameterId::GrainPitchQuant));
-    gp.loopStart01        = get (ParameterId::LoopStart);
-    gp.loopEnd01          = get (ParameterId::LoopEnd);
+    gp.loopStart01        = loopLo;
+    gp.loopEnd01          = loopHi;
     gp.grainPattern       = get (ParameterId::GrainPattern);
     gp.grainPatternAmount = get (ParameterId::GrainPatternAmount);
     engine_.getGranular().setParams (gp);

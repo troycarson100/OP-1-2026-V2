@@ -260,6 +260,28 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
                     std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
                         apvts, paramId, *control.spaceFreezeToggle);
         }
+        else if (id == sculpt::ParameterId::LoopSnapGrid)
+        {
+            control.loopSnapToggle = std::make_unique<juce::ToggleButton> ("Grid");
+            control.loopSnapToggle->setClickingTogglesState (true);
+            control.loopSnapToggle->setTooltip ("Snap Loop Start / End to a 1/64 buffer grid.");
+            control.loopSnapToggle->setColour (juce::ToggleButton::textColourId, kText);
+            control.loopSnapToggle->setColour (juce::ToggleButton::tickColourId, kAccent);
+            addAndMakeVisible (*control.loopSnapToggle);
+
+            control.label = std::make_unique<juce::Label>();
+            control.label->setText (sculpt::parameterName (id), juce::dontSendNotification);
+            control.label->setJustificationType (juce::Justification::centred);
+            control.label->setColour (juce::Label::textColourId, kText);
+            control.label->setFont (juce::FontOptions (12.0f));
+            addAndMakeVisible (*control.label);
+
+            const auto paramId = bridge::paramIdString (track, id);
+            if (apvts.getParameter (paramId) != nullptr)
+                control.loopSnapAttachment =
+                    std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+                        apvts, paramId, *control.loopSnapToggle);
+        }
         else
         {
             control.slider = std::make_unique<juce::Slider> (juce::Slider::RotaryHorizontalVerticalDrag,
@@ -484,6 +506,8 @@ void SculptSamplerAudioProcessorEditor::resized()
             pageControls_[i].slider->setBounds (cell);
         else if (pageControls_[i].spaceFreezeToggle != nullptr)
             pageControls_[i].spaceFreezeToggle->setBounds (cell.reduced (6, 10));
+        else if (pageControls_[i].loopSnapToggle != nullptr)
+            pageControls_[i].loopSnapToggle->setBounds (cell.reduced (6, 10));
         if (pageControls_[i].tapeSnapToggle != nullptr)
         {
             constexpr int sq        = 12;

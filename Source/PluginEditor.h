@@ -68,6 +68,9 @@ private:
         // Space page: Freeze is a bool host parameter (toggle, not a rotary).
         std::unique_ptr<juce::ToggleButton> spaceFreezeToggle;
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> spaceFreezeAttachment;
+        // Material page: snap loop in/out to grid (bool).
+        std::unique_ptr<juce::ToggleButton> loopSnapToggle;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopSnapAttachment;
     };
     std::vector<PageControl> pageControls_;
     int lastBuiltTrack_ = -1;

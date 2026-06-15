@@ -8,9 +8,22 @@
 namespace sculpt
 {
 
+namespace
+{
+    constexpr int kWrapBlendSamples = 72; // ~1.6 ms @ 44.1k
+
+    inline float epCos (float u) { return std::cos (0.5f * kPi * u); }
+    inline float epSin (float u) { return std::sin (0.5f * kPi * u); }
+} // namespace
+
 void TapePlayer::prepare (double sampleRate)
 {
     sampleRate_ = sampleRate > 0.0 ? sampleRate : 44100.0;
+    // ~2 ms toward new loop in/out — kills zipper when dragging loop points while playing.
+    loopStartSm_.prepare (sampleRate_, 0.002f);
+    loopEndSm_.prepare (sampleRate_, 0.002f);
+    loopStartSm_.snap (loopStartTarget_);
+    loopEndSm_.snap (loopEndTarget_);
     reset();
 }
 
@@ -26,6 +39,9 @@ void TapePlayer::reset()
     scrubOutLp2L_       = 0.0f;
     scrubOutLp2R_       = 0.0f;
     scrubLpPrimed_      = false;
+    wrapBlendRemain_    = 0;
+    loopStartSm_.snap (loopStartTarget_);
+    loopEndSm_.snap (loopEndTarget_);
 }
 
 void TapePlayer::setFollowScrubTarget (bool shouldFollow) noexcept
@@ -42,7 +58,6 @@ void TapePlayer::setFollowScrubTarget (bool shouldFollow) noexcept
     }
     if (! followScrubTarget_ && shouldFollow)
     {
-        // Gesture just started: latch to latest scrub target (seek must run before this).
         smoothRead_ = scrubTarget_;
         smoothInit_ = true;
         scrubLpPrimed_ = false;
@@ -52,17 +67,18 @@ void TapePlayer::setFollowScrubTarget (bool shouldFollow) noexcept
 
 void TapePlayer::setLoopRegion (float start01, float end01)
 {
-    loopStart_ = clamp01 (start01);
-    loopEnd_   = clamp01 (end01);
-    if (loopEnd_ < loopStart_ + 0.01f)
-        loopEnd_ = clampf (loopStart_ + 0.01f, 0.0f, 1.0f);
+    loopStartTarget_ = clamp01 (start01);
+    loopEndTarget_   = clamp01 (end01);
+    if (loopEndTarget_ < loopStartTarget_ + 0.01f)
+        loopEndTarget_ = clampf (loopStartTarget_ + 0.01f, 0.0f, 1.0f);
+    loopStartSm_.setTarget (loopStartTarget_);
+    loopEndSm_.setTarget (loopEndTarget_);
 }
 
 float TapePlayer::getPositionNormalized (int numFrames) const
 {
     if (numFrames <= 1)
         return 0.0f;
-    // During live scrub, report the knob target so UI / playhead stays locked to the gesture.
     const double pos = (followScrubTarget_ && playing_) ? scrubTarget_ : position_;
     return static_cast<float> (pos / static_cast<double> (numFrames));
 }
@@ -102,6 +118,9 @@ void TapePlayer::seekNormalized (float position01, int numFrames, float loopStar
 
     position_   = p;
     smoothRead_ = p;
+    // Jumping the playhead: align smoothed loop region immediately (avoids transient mismatch).
+    loopStartSm_.snap (loopStartTarget_);
+    loopEndSm_.snap (loopEndTarget_);
 }
 
 bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regionEnd,
@@ -115,9 +134,16 @@ bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regio
         return false;
     }
     if (speed_ >= 0.0f)
+    {
+        wrapBlendFromPos_ = std::clamp (regionEnd - 2.0, regionStart + 0.25, regionEnd - 0.25);
         pos = regionStart + std::fmod (pos - regionStart + regionLen, regionLen);
+    }
     else
+    {
+        wrapBlendFromPos_ = std::clamp (regionStart + 2.0, regionStart + 0.25, regionEnd - 0.25);
         pos = regionEnd - std::fmod (regionEnd - pos + regionLen, regionLen);
+    }
+    wrapBlendRemain_ = kWrapBlendSamples;
     return true;
 }
 
@@ -127,16 +153,9 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
     if (! playing_ || frames < 2)
         return;
 
-    const double regionStart = static_cast<double> (loopStart_) * (frames - 1);
-    const double regionEnd   = static_cast<double> (loopEnd_) * (frames - 1);
-    const double regionLen   = regionEnd - regionStart;
-    if (regionLen < 2.0)
-        return;
-
     const int rightChannel = buffer.getNumChannels() > 1 ? 1 : 0;
 
     const bool follow = followScrubTarget_ && playing_;
-    // Fast read-head catch-up (responsive knob) + dual LP on output (less zipper / grain).
     const double slewCoeff = follow
                                  ? (1.0 - std::exp (-1.0 / (sampleRate_ * 0.0029)))
                                  : 0.0;
@@ -149,16 +168,32 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
 
     if (follow && smoothInit_)
     {
-        const double errBlock = scrubTarget_ - smoothRead_;
-        const double pullThresh = std::max (320.0, sampleRate_ * 0.0035);
-        if (std::fabs (errBlock) > pullThresh)
-            smoothRead_ += errBlock * 0.28;
-        if (! wrapReadPosition (smoothRead_, regionStart, regionEnd, regionLen))
-            return;
+        const double last = static_cast<double> (frames - 1);
+        const double regionStart0 = static_cast<double> (loopStartSm_.getCurrent()) * last;
+        const double regionEnd0   = static_cast<double> (loopEndSm_.getCurrent()) * last;
+        const double regionLen0   = regionEnd0 - regionStart0;
+        if (regionLen0 >= 2.0)
+        {
+            const double errBlock = scrubTarget_ - smoothRead_;
+            const double pullThresh = std::max (320.0, sampleRate_ * 0.0035);
+            if (std::fabs (errBlock) > pullThresh)
+                smoothRead_ += errBlock * 0.28;
+            if (! wrapReadPosition (smoothRead_, regionStart0, regionEnd0, regionLen0))
+                return;
+        }
     }
 
     for (int i = 0; i < numSamples; ++i)
     {
+        const double last = static_cast<double> (frames - 1);
+        const float    ls = loopStartSm_.next();
+        const float    le = loopEndSm_.next();
+        const double regionStart = static_cast<double> (ls) * last;
+        const double regionEnd   = static_cast<double> (le) * last;
+        const double regionLen   = regionEnd - regionStart;
+        if (regionLen < 2.0)
+            return;
+
         if (follow)
         {
             if (! smoothInit_)
@@ -169,7 +204,6 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             const double prev = smoothRead_;
             const double err  = scrubTarget_ - prev;
             const double absErr = std::fabs (err);
-            // Tighter cap when nearly on target (less buzz); looser when far (snappy knob).
             const double cap = absErr > 600.0 ? 4.2 : (absErr > 120.0 ? 2.6 : 1.35);
             double       step = err * slewCoeff;
             if (step > cap)
@@ -180,8 +214,21 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             if (! wrapReadPosition (next, regionStart, regionEnd, regionLen))
                 return;
             const float pos = static_cast<float> (0.5 * (prev + next));
-            const float rawL = buffer.getSampleLinear (0, pos) * level_;
-            const float rawR = buffer.getSampleLinear (rightChannel, pos) * level_;
+            float       rawL = buffer.getSampleLinear (0, pos) * level_;
+            float       rawR = buffer.getSampleLinear (rightChannel, pos) * level_;
+            if (wrapBlendRemain_ > 0)
+            {
+                const float u = 1.0f - static_cast<float> (wrapBlendRemain_) / static_cast<float> (kWrapBlendSamples);
+                const float c = epCos (u);
+                const float s = epSin (u);
+                const float fromL =
+                    buffer.getSampleLinear (0, static_cast<float> (wrapBlendFromPos_)) * level_;
+                const float fromR =
+                    buffer.getSampleLinear (rightChannel, static_cast<float> (wrapBlendFromPos_)) * level_;
+                rawL = c * fromL + s * rawL;
+                rawR = c * fromR + s * rawR;
+                --wrapBlendRemain_;
+            }
             if (! scrubLpPrimed_)
             {
                 scrubOutLpL_   = rawL;
@@ -208,8 +255,23 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             return;
 
         const float pos = static_cast<float> (position_);
-        outL[i] += buffer.getSampleLinear (0, pos) * level_;
-        outR[i] += buffer.getSampleLinear (rightChannel, pos) * level_;
+        float       rawL = buffer.getSampleLinear (0, pos) * level_;
+        float       rawR = buffer.getSampleLinear (rightChannel, pos) * level_;
+        if (wrapBlendRemain_ > 0)
+        {
+            const float u = 1.0f - static_cast<float> (wrapBlendRemain_) / static_cast<float> (kWrapBlendSamples);
+            const float c = epCos (u);
+            const float s = epSin (u);
+            const float fromL =
+                buffer.getSampleLinear (0, static_cast<float> (wrapBlendFromPos_)) * level_;
+            const float fromR =
+                buffer.getSampleLinear (rightChannel, static_cast<float> (wrapBlendFromPos_)) * level_;
+            rawL = c * fromL + s * rawL;
+            rawR = c * fromR + s * rawR;
+            --wrapBlendRemain_;
+        }
+        outL[i] += rawL;
+        outR[i] += rawR;
 
         position_ += static_cast<double> (speed_);
     }

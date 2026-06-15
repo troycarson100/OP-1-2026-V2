@@ -404,6 +404,8 @@ namespace
             }
             case P::SpaceFreeze:
                 return (v > 0.5f) ? "ON" : "OFF";
+            case P::LoopSnapGrid:
+                return (v > 0.5f) ? "ON" : "OFF";
             case P::SpaceReverbDecay:
                 return juce::String (sculpt::map::spaceReverbRt60Seconds (v), 1) + "s";
             case P::SpaceDamp:
