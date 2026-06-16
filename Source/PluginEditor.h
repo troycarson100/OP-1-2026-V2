@@ -53,7 +53,7 @@ private:
 
     // Pages (device row + MIX)
     std::array<juce::TextButton, static_cast<size_t> (sculpt::Page::Count)> pageButtons_;
-    // Granular only: switch between core grain encoders (1) and sync / Euclidean / pitch-quant (2).
+    // Granular only: switch between encoder bank 1 (core sound) and 2 (rhythm + pitch + pattern).
     std::array<juce::TextButton, 2> granularEncoderPageButtons_;
     sculpt::Page currentPage_ = sculpt::Page::Granular;
 

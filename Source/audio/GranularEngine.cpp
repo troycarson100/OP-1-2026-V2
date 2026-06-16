@@ -212,13 +212,33 @@ void GranularEngine::spawnOneGrain (const SampleBuffer& buffer, int startOffsetI
     amp *= accentMul;
     amp *= dbToGain (gainDbP);
 
+    // RandAmp: per-grain amplitude variation (S-4 RAND AMP).
+    if (params_.randAmp > 1.0e-5f)
+        amp *= std::max (0.05f, 1.0f - params_.randAmp * 0.75f * rng_.nextFloat());
+
     GrainVoice::StartParams sp;
-    sp.startFrame           = startFrame;
-    sp.increment            = increment;
-    sp.lengthSamples        = lengthSamples;
-    sp.gainL                = gainL * amp;
-    sp.gainR                = gainR * amp;
-    sp.startOffsetSamples   = std::max (0, startOffsetInBlock);
+    sp.startFrame         = startFrame;
+    sp.increment          = increment;
+    sp.lengthSamples      = lengthSamples;
+    sp.gainL              = gainL * amp;
+    sp.gainR              = gainR * amp;
+    sp.startOffsetSamples = std::max (0, startOffsetInBlock);
+    sp.contour            = params_.contour;
+
+    // RandRev: probabilistic grain reversal (S-4 RAND REV). Reversed grains start at
+    // the far end of their window and walk backward; getSampleLinear wraps at buffer bounds.
+    if (params_.randRev > 1.0e-5f && rng_.nextFloat() < params_.randRev)
+    {
+        float revStart = sp.startFrame + static_cast<float> (sp.lengthSamples - 1) * std::fabs (sp.increment);
+        if (frames > 0.0f)
+        {
+            revStart = std::fmod (revStart, frames);
+            if (revStart < 0.0f) revStart += frames;
+        }
+        sp.startFrame = revStart;
+        sp.increment  = -std::fabs (sp.increment);
+    }
+
     voice->start (sp);
 }
 

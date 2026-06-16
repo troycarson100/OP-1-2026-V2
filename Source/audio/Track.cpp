@@ -178,6 +178,9 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     gp.loopEnd01          = loopHi;
     gp.grainPattern       = get (ParameterId::GrainPattern);
     gp.grainPatternAmount = get (ParameterId::GrainPatternAmount);
+    gp.contour            = get (ParameterId::GrainContour);
+    gp.randRev            = get (ParameterId::GrainRandRev);
+    gp.randAmp            = get (ParameterId::GrainRandAmp);
     engine_.getGranular().setParams (gp);
     engine_.setGranularBlockTiming (granularTiming);
     if (materialPlayheadScrub)

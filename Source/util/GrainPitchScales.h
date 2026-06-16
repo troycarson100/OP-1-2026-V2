@@ -10,24 +10,19 @@ namespace sculpt
 {
 
 // Scale tables: semitone offsets within one octave [0, 12), first element 0 (root).
-constexpr std::array<int, 3> kGrainScaleOctavesFifths { 0, 5, 7 };
-constexpr std::array<int, 5> kGrainScaleMajorPent { 0, 2, 4, 7, 9 };
-constexpr std::array<int, 5> kGrainScaleMinorPent { 0, 3, 5, 7, 10 };
-constexpr std::array<int, 12> kGrainScaleChromatic { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
+constexpr std::array<int, 3>  kGrainScaleOctavesFifths { 0, 5, 7 };
+constexpr std::array<int, 5>  kGrainScaleMajorPent     { 0, 2, 4, 7, 9 };
+constexpr std::array<int, 5>  kGrainScaleMinorPent     { 0, 3, 5, 7, 10 };
+constexpr std::array<int, 7>  kGrainScaleMajor         { 0, 2, 4, 5, 7, 9, 11 };
+constexpr std::array<int, 7>  kGrainScaleNatMinor      { 0, 2, 3, 5, 7, 8, 10 };
+constexpr std::array<int, 7>  kGrainScaleDorian        { 0, 2, 3, 5, 7, 9, 10 };
+constexpr std::array<int, 12> kGrainScaleChromatic     { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 };
 
-// Normalized GrainPitchQuant: 0 = off (continuous). Stepped indices 1..4 map to tables above.
+// Normalized GrainPitchQuant: 0 = off. Stepped indices 1..7 map to scale tables.
+// 0=Off, 1=Fifths, 2=MajPent, 3=MinPent, 4=Major, 5=NatMinor, 6=Dorian, 7=Chromatic
 inline int grainPitchQuantScaleIndex (float n01)
 {
-    const float n = clamp01 (n01);
-    if (n <= 1.0e-4f)
-        return 0;
-    if (n < 0.25f)
-        return 1;
-    if (n < 0.5f)
-        return 2;
-    if (n < 0.75f)
-        return 3;
-    return 4;
+    return std::clamp (static_cast<int> (std::lround (clamp01 (n01) * 7.0f)), 0, 7);
 }
 
 // Snap `semis` (semitone offset, any range) to nearest scale degree; scaleIndex 0 = no change.
@@ -65,19 +60,31 @@ inline float quantizeGrainPitchSemitones (float semis, int scaleIndex)
     {
         case 1:
             snapped = nearestInList (phase, kGrainScaleOctavesFifths.data (),
-                                      static_cast<int> (kGrainScaleOctavesFifths.size ()));
+                                     static_cast<int> (kGrainScaleOctavesFifths.size ()));
             break;
         case 2:
             snapped = nearestInList (phase, kGrainScaleMajorPent.data (),
-                                      static_cast<int> (kGrainScaleMajorPent.size ()));
+                                     static_cast<int> (kGrainScaleMajorPent.size ()));
             break;
         case 3:
             snapped = nearestInList (phase, kGrainScaleMinorPent.data (),
-                                      static_cast<int> (kGrainScaleMinorPent.size ()));
+                                     static_cast<int> (kGrainScaleMinorPent.size ()));
             break;
         case 4:
+            snapped = nearestInList (phase, kGrainScaleMajor.data (),
+                                     static_cast<int> (kGrainScaleMajor.size ()));
+            break;
+        case 5:
+            snapped = nearestInList (phase, kGrainScaleNatMinor.data (),
+                                     static_cast<int> (kGrainScaleNatMinor.size ()));
+            break;
+        case 6:
+            snapped = nearestInList (phase, kGrainScaleDorian.data (),
+                                     static_cast<int> (kGrainScaleDorian.size ()));
+            break;
+        case 7:
             snapped = nearestInList (phase, kGrainScaleChromatic.data (),
-                                      static_cast<int> (kGrainScaleChromatic.size ()));
+                                     static_cast<int> (kGrainScaleChromatic.size ()));
             break;
         default:
             return semis;

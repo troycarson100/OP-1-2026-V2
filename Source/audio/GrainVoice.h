@@ -13,11 +13,12 @@ public:
     struct StartParams
     {
         float startFrame   = 0.0f;   // fractional frame in the source buffer
-        float increment    = 1.0f;   // playback ratio (pitch)
+        float increment    = 1.0f;   // playback ratio (pitch); negative = reversed
         int   lengthSamples = 0;
         float gainL        = 0.5f;
         float gainR        = 0.5f;
         int   startOffsetSamples = 0; // silence at start of render (synced sample-accurate spawn)
+        float contour      = 0.0f;   // 0 = Hann (smooth), 1 = percussive (S-4 CONTOUR)
     };
 
     void start (const StartParams& params);
@@ -39,6 +40,7 @@ private:
     int   length_    = 0;
     float gainL_     = 0.0f;
     float gainR_     = 0.0f;
+    float contour_   = 0.0f;
     bool  active_    = false;
     int   startOffsetRemaining_ = 0;
 

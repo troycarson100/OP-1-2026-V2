@@ -7,14 +7,17 @@ namespace
 {
     constexpr ParameterId kEmpty = ParameterId::Count;
 
-    // Granular: two 8-encoder banks — core / sync + Euclidean + pitch quant + choreography.
+    // Granular: two 8-encoder banks.
+    // p1=core sound / p2=rhythm+pitch+pattern (S-4-style split).
     constexpr ParameterId kGranularEncoderPage[2][8] = {
+        // Page 1: core grain controls — Contour replaces Texture for direct S-4 musicality
         { ParameterId::GrainPosition, ParameterId::GrainSize, ParameterId::GrainDensity,
-          ParameterId::GrainPitch, ParameterId::GrainSpray, ParameterId::GrainTexture,
+          ParameterId::GrainPitch, ParameterId::GrainSpray, ParameterId::GrainContour,
           ParameterId::GrainSpread, ParameterId::GrainMix },
+        // Page 2: rhythm + pitch + choreography; RandRev fills the formerly empty 8th slot
         { ParameterId::GrainSync, ParameterId::GrainSteps, ParameterId::GrainPulses,
           ParameterId::GrainRotate, ParameterId::GrainPitchQuant, ParameterId::GrainPattern,
-          ParameterId::GrainPatternAmount, kEmpty },
+          ParameterId::GrainPatternAmount, ParameterId::GrainRandRev },
     };
 
     // Every row must list all kMaxParamsPerPage slots: omitted trailing elements value-init to

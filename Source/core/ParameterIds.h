@@ -51,6 +51,14 @@ enum class ParameterId : int
     // 0 = pattern bypass (Phase-2-equivalent offsets); 1 = full relative pattern offsets.
     GrainPatternAmount,
 
+    // S-4-inspired grain timbre controls.
+    // Envelope shape: 0 = Hann bell (smooth), 1 = percussive (fast attack, exp decay).
+    GrainContour,
+    // Per-grain reverse probability: 0 = never reversed, 1 = always reversed.
+    GrainRandRev,
+    // Per-grain amplitude randomization depth: 0 = flat, 1 = up to -75% random reduction.
+    GrainRandAmp,
+
     FilterCutoff,
     FilterResonance,
     FilterMix,
@@ -152,6 +160,9 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::GrainPitchQuant: return 0.0f;   // off
         case ParameterId::GrainPattern:     return 0.0f;   // Flat
         case ParameterId::GrainPatternAmount: return 0.0f; // bypass
+        case ParameterId::GrainContour:    return 0.0f;   // Hann (smooth)
+        case ParameterId::GrainRandRev:    return 0.0f;   // no reversals
+        case ParameterId::GrainRandAmp:    return 0.0f;   // flat amplitude
         case ParameterId::FilterCutoff:    return 0.80f;
         case ParameterId::FilterResonance: return 0.20f;
         case ParameterId::FilterMix:       return 1.0f;
@@ -465,6 +476,9 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::GrainPitchQuant: return "Grain Pitch Q";
         case ParameterId::GrainPattern:     return "Grain Pattern";
         case ParameterId::GrainPatternAmount: return "Pattern Amt";
+        case ParameterId::GrainContour:    return "Contour";
+        case ParameterId::GrainRandRev:    return "Rand Rev";
+        case ParameterId::GrainRandAmp:    return "Rand Amp";
         case ParameterId::FilterCutoff:    return "Filter Cutoff";
         case ParameterId::FilterResonance: return "Resonance";
         case ParameterId::FilterMix:       return "Filter Mix";

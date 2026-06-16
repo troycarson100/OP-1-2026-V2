@@ -49,6 +49,10 @@ public:
 
         float grainPattern        = 0.0f; // normalized → map::grainPatternIndex
         float grainPatternAmount  = 0.0f; // 0 = bypass choreography
+
+        float contour  = 0.0f; // 0 = Hann, 1 = percussive (S-4 CONTOUR)
+        float randRev  = 0.0f; // per-grain reverse probability 0..1 (S-4 RAND REV)
+        float randAmp  = 0.0f; // per-grain amplitude variation 0..1 (S-4 RAND AMP)
     };
 
     void prepare (double sampleRate);

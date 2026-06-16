@@ -380,10 +380,24 @@ namespace
                     case 1: return "5th/Oct";
                     case 2: return "MajPent";
                     case 3: return "MinPent";
-                    case 4: return "Chrm";
+                    case 4: return "Major";
+                    case 5: return "MinNat";
+                    case 6: return "Dorian";
+                    case 7: return "Chrm";
                     default: return "?";
                 }
             }
+            case P::GrainContour:
+            {
+                if (v < 0.2f) return "Hann";
+                if (v < 0.5f) return "Warm";
+                if (v < 0.8f) return "Perc";
+                return "Sharp";
+            }
+            case P::GrainRandRev:
+                return juce::String (juce::roundToInt (v * 100.0f)) + "% Rev";
+            case P::GrainRandAmp:
+                return juce::String (juce::roundToInt (v * 100.0f)) + "% Amp";
             case P::GrainPattern:
             {
                 const int i = sculpt::map::grainPatternIndex (v);
