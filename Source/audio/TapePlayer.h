@@ -45,6 +45,11 @@ public:
     void process (const SampleBuffer& buffer, float* outL, float* outR, int numSamples);
 
 private:
+    // Loop boundary dragged over the playhead from the trailing side: clamp to that edge
+    // (forward → pull to start; reverse → pull to end). Distinct from leading-edge wrap.
+    bool pullPlayheadToTrailingBoundary (double& pos, double regionStart, double regionEnd,
+                                         double targetStart, double targetEnd) noexcept;
+
     bool wrapReadPosition (double& pos, double regionStart, double regionEnd, double regionLen) noexcept;
 
     double position_  = 0.0;   // in frames

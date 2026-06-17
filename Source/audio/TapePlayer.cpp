@@ -137,6 +137,48 @@ void TapePlayer::seekNormalized (float position01, int numFrames, float loopStar
     loopEndSm_.snap (loopEndTarget_);
 }
 
+bool TapePlayer::pullPlayheadToTrailingBoundary (double& pos, double regionStart, double regionEnd,
+                                               double targetStart, double targetEnd) noexcept
+{
+    // A trailing loop boundary has swept past the playhead. We must NOT track the smoothed
+    // boundary as it creeps forward — gluing the read head to a fast-moving boundary scans the
+    // sample at many times playback speed (the "laser"). Instead: jump the read once to the
+    // boundary's TARGET (final) position, freeze that smoother to its target so the region stops
+    // sweeping, and crossfade from the old read position. Continuous dragging then becomes a few
+    // discrete, crossfaded jumps rather than a continuous pitched scan.
+
+    auto snapAndBlend = [this] (double& p, double dest) noexcept
+    {
+        if (wrapBlendRemain_ <= 0)
+        {
+            wrapBlendFromPos_ = p;
+            wrapBlendLen_     = std::max (attackSamples_, releaseSamples_);
+            wrapBlendRemain_  = wrapBlendLen_;
+        }
+        p = dest;
+    };
+
+    if (speed_ >= 0.0f)
+    {
+        if (pos < regionStart)
+        {
+            snapAndBlend (pos, targetStart);
+            loopStartSm_.snap (loopStartTarget_); // stop the boundary sweep that caused the scan
+            return true;
+        }
+    }
+    else
+    {
+        if (pos >= regionEnd)
+        {
+            snapAndBlend (pos, std::max (targetStart, targetEnd - 1.0e-4));
+            loopEndSm_.snap (loopEndTarget_);
+            return true;
+        }
+    }
+    return false;
+}
+
 bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regionEnd,
                                    double regionLen) noexcept
 {
@@ -212,6 +254,9 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             const double pullThresh = std::max (320.0, sampleRate_ * 0.0035);
             if (std::fabs (errBlock) > pullThresh)
                 smoothRead_ += errBlock * 0.28;
+            pullPlayheadToTrailingBoundary (smoothRead_, regionStart0, regionEnd0,
+                                            static_cast<double> (loopStartTarget_) * last,
+                                            static_cast<double> (loopEndTarget_) * last);
             if (! wrapReadPosition (smoothRead_, regionStart0, regionEnd0, regionLen0))
                 return;
         }
@@ -245,6 +290,9 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             else if (step < -cap)
                 step = -cap;
             double next = prev + step;
+            pullPlayheadToTrailingBoundary (next, regionStart, regionEnd,
+                                            static_cast<double> (loopStartTarget_) * last,
+                                            static_cast<double> (loopEndTarget_) * last);
             if (! wrapReadPosition (next, regionStart, regionEnd, regionLen))
                 return;
             const float pos = static_cast<float> (0.5 * (prev + next));
@@ -260,6 +308,7 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
                     buffer.getSampleLinear (rightChannel, static_cast<float> (wrapBlendFromPos_)) * level_;
                 rawL = gOut * fromL + gIn * rawL;
                 rawR = gOut * fromR + gIn * rawR;
+                wrapBlendFromPos_ += static_cast<double> (speed_);
                 --wrapBlendRemain_;
             }
             if (! scrubLpPrimed_)
@@ -284,6 +333,9 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             continue;
         }
 
+        pullPlayheadToTrailingBoundary (position_, regionStart, regionEnd,
+                                        static_cast<double> (loopStartTarget_) * last,
+                                        static_cast<double> (loopEndTarget_) * last);
         if (! wrapReadPosition (position_, regionStart, regionEnd, regionLen))
             return;
 
