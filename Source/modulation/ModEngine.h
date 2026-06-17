@@ -40,9 +40,14 @@ public:
 
 private:
     float sourceValue (int track, int slot, float inputEnv01, int numSamples,
-                       double beatAtBlockStart, double beatAtBlockEnd);
+                       double beatAtBlockStart, double beatAtBlockEnd,
+                       float amountOffset, float rateOffset);
 
     ModPatch live_;
+
+    // Previous block's source value per slot, used so mod-slot-targeting modulation (a slot
+    // modulating another slot's Amount/Rate) is well-defined regardless of slot order / feedback.
+    std::array<std::array<float, kModSlotsPerTrack>, kNumTracks> prevSrc_ {};
 
     std::array<std::array<LFO, kModSlotsPerTrack>, kNumTracks>             lfos_ {};
     std::array<std::array<RandomModulator, kModSlotsPerTrack>, kNumTracks> rnds_ {};

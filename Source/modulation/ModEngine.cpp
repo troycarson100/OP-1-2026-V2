@@ -50,6 +50,7 @@ void ModEngine::reset()
             lfos_[static_cast<size_t> (t)][static_cast<size_t> (s)].reset();
             rnds_[static_cast<size_t> (t)][static_cast<size_t> (s)].reset();
             adsrs_[static_cast<size_t> (t)][static_cast<size_t> (s)].reset();
+            prevSrc_[static_cast<size_t> (t)][static_cast<size_t> (s)] = 0.0f;
         }
     }
 }
@@ -63,9 +64,12 @@ void ModEngine::triggerAdsr (int track, int slot)
 }
 
 float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamples,
-                              double beatAtBlockStart, double beatAtBlockEnd)
+                              double beatAtBlockStart, double beatAtBlockEnd,
+                              float amountOffset, float rateOffset)
 {
     const auto& sp = live_.slots[static_cast<size_t> (track)][static_cast<size_t> (slot)];
+    // rateOffset (a -1..1-ish mod sum) scaled to a Hz delta added to free-rate sources.
+    const float rateHzDelta = rateOffset * 8.0f;
     switch (sp.kind)
     {
         case ModulatorKind::Off:
@@ -73,7 +77,7 @@ float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamp
         case ModulatorKind::Wave:
         {
             const LFO::Shape sh = shapeFromPatchIndex (sp.waveShape);
-            const float      depth = waveDepth01 (sp.waveAmount);
+            const float      depth = waveDepth01 (clamp01 (sp.waveAmount + amountOffset));
             float            bipolar = 0.0f;
 
             if (sp.waveSync != 0)
@@ -87,7 +91,7 @@ float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamp
             else
             {
                 auto& lfo = lfos_[static_cast<size_t> (track)][static_cast<size_t> (slot)];
-                lfo.setRateHz (sp.waveRateHz);
+                lfo.setRateHz (std::clamp (sp.waveRateHz + rateHzDelta, 0.02f, 18.0f));
                 lfo.setShape (sh);
                 lfo.setBend01 (sp.waveBend01);
                 lfo.update (numSamples);
@@ -106,11 +110,11 @@ float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamp
             }
             else
             {
-                r.setRateHz (sp.randomRateHz);
+                r.setRateHz (std::clamp (sp.randomRateHz + rateHzDelta, 0.1f, 24.0f));
                 r.setSlew (sp.randomSlew01);
                 r.update (numSamples);
             }
-            return r.getValue() * clamp01 (sp.randomAmount);
+            return r.getValue() * clamp01 (sp.randomAmount + amountOffset);
         }
         case ModulatorKind::ADSR:
         {
@@ -146,19 +150,54 @@ void ModEngine::apply (ParameterState& params, float inputEnv01, int numSamples,
         }
     }
 
+    const int modPageIdx = static_cast<int> (Page::Mod);
+
     for (int t = 0; t < kNumTracks; ++t)
     {
+        // 1. Mod-slot targeting: accumulate each slot's Amount/Rate offset from other slots.
+        //    Uses the previous block's source values so the result is independent of slot order
+        //    and stable under feedback (one-block latency on slot->slot modulation).
+        float amtOff[kModSlotsPerTrack]  = { 0.0f };
+        float rateOff[kModSlotsPerTrack] = { 0.0f };
+        for (int s = 0; s < kModSlotsPerTrack; ++s)
+        {
+            if (live_.slots[static_cast<size_t> (t)][static_cast<size_t> (s)].kind == ModulatorKind::Off)
+                continue;
+            const float srcPrev = prevSrc_[static_cast<size_t> (t)][static_cast<size_t> (s)];
+            const float uniPrev = srcPrev * 0.5f + 0.5f;
+            for (int enc = 0; enc < kMaxModMappingEncoders; ++enc)
+            {
+                int dstSlot = 0; ModSlotTarget tgt {};
+                if (! modSlotTargetForEncoder (enc, dstSlot, tgt))
+                    continue;
+                const auto& d = live_.maps[static_cast<size_t> (t)][static_cast<size_t> (s)][static_cast<size_t> (modPageIdx)][static_cast<size_t> (enc)];
+                if (d.depth == 0.0f)
+                    continue;
+                const float delta = (d.bipolar != 0) ? (srcPrev * d.depth) : (uniPrev * d.depth);
+                if (tgt == ModSlotTarget::Amount)
+                    amtOff[dstSlot]  += delta;
+                else
+                    rateOff[dstSlot] += delta;
+            }
+        }
+
+        // 2. Compute each slot's source value (with its Amount/Rate offset) and route to device params.
+        float curSrc[kModSlotsPerTrack] = { 0.0f };
         for (int s = 0; s < kModSlotsPerTrack; ++s)
         {
             if (live_.slots[static_cast<size_t> (t)][static_cast<size_t> (s)].kind == ModulatorKind::Off)
                 continue;
 
             const float src = sourceValue (t, s, inputEnv01, numSamples,
-                                           beatAtBlockStart, beatAtBlockEnd);
+                                           beatAtBlockStart, beatAtBlockEnd,
+                                           amtOff[s], rateOff[s]);
+            curSrc[s] = src;
             const float uniShape = src * 0.5f + 0.5f;
 
             for (int pg = 0; pg < kModMapTargetPages; ++pg)
             {
+                if (pg == modPageIdx)
+                    continue; // mod-slot targets handled in pass 1
                 const auto page = static_cast<Page> (pg);
                 for (int enc = 0; enc < kMaxModMappingEncoders; ++enc)
                 {
@@ -178,6 +217,10 @@ void ModEngine::apply (ParameterState& params, float inputEnv01, int numSamples,
                 }
             }
         }
+
+        // 3. Latch this block's source values for next block's mod-slot targeting.
+        for (int s = 0; s < kModSlotsPerTrack; ++s)
+            prevSrc_[static_cast<size_t> (t)][static_cast<size_t> (s)] = curSrc[s];
     }
 }
 

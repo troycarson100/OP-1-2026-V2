@@ -47,6 +47,19 @@ struct ModPatchSlotParams
     float adsrReleaseSec = 0.12f;
 };
 
+// Modulatable parameters of a mod slot, exposed as the encoders of the "Mod" target page so a
+// slot can modulate another slot. Encoder layout: slot = enc/2, target = enc%2.
+enum class ModSlotTarget : uint8_t { Amount = 0, Rate = 1 };
+
+inline bool modSlotTargetForEncoder (int encoder, int& slot, ModSlotTarget& target)
+{
+    if (encoder < 0 || encoder >= 2 * kModSlotsPerTrack)
+        return false;
+    slot   = encoder / 2;
+    target = (encoder % 2 == 0) ? ModSlotTarget::Amount : ModSlotTarget::Rate;
+    return true;
+}
+
 struct ModMappingDepth
 {
     float    depth   = 0.0f;    // amount; uni uses 0..1, bi uses -1..1 in UI

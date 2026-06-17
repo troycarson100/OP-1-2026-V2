@@ -14,6 +14,26 @@ namespace
         return static_cast<sculpt::Page> (juce::jlimit (0, kNumMapPages - 1, idx));
     }
 
+    // Label for mapping encoder `enc` on target `page`, or empty if that encoder is unused.
+    // The Mod target page exposes other slots' Amount / Rate (see modSlotTargetForEncoder).
+    juce::String mapTargetName (sculpt::Page page, int enc)
+    {
+        if (page == sculpt::Page::Mod)
+        {
+            int slot = 0; sculpt::ModSlotTarget tgt {};
+            if (! sculpt::modSlotTargetForEncoder (enc, slot, tgt))
+                return {};
+            return "S" + juce::String (slot + 1)
+                   + (tgt == sculpt::ModSlotTarget::Amount ? " Amt" : " Rate");
+        }
+        const auto id = sculpt::PageModel::parameterForSlot (page, enc);
+        if (id == sculpt::ParameterId::Count)
+            return {};
+        return juce::String (sculpt::parameterName (id));
+    }
+
+    bool mapTargetActive (sculpt::Page page, int enc) { return mapTargetName (page, enc).isNotEmpty(); }
+
     int readSelectedTrack (SculptSamplerAudioProcessor& proc)
     {
         if (auto* p = proc.getValueTreeState().getParameter ("selectedTrack"))
@@ -142,7 +162,7 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
     wireSlider (adsrR_, 0.001f, 4.0f);
 
     addAndMakeVisible (mapPageLabel_);
-    const char* pageNames[] = { "Material", "Granular", "Filter", "Color", "Space", "Mixer" };
+    const char* pageNames[] = { "Material", "Granular", "Filter", "Color", "Space", "Mixer", "Mod" };
     for (int i = 0; i < kNumMapPages; ++i)
         mapPageCombo_.addItem (pageNames[i], i + 1);
     mapPageCombo_.setSelectedId (2, juce::dontSendNotification);
@@ -365,8 +385,8 @@ void ModPagePanel::refreshFromEngine()
 
     for (int i = 0; i < sculpt::kMaxModMappingEncoders; ++i)
     {
-        const sculpt::ParameterId id = sculpt::PageModel::parameterForSlot (page, i);
-        const bool active = (id != sculpt::ParameterId::Count);
+        const juce::String name = mapTargetName (page, i);
+        const bool active = name.isNotEmpty();
         mapName_[static_cast<size_t> (i)].setVisible (active);
         mapPolarT_[static_cast<size_t> (i)].setVisible (active);
         mapDepth_[static_cast<size_t> (i)].setVisible (active);
@@ -374,8 +394,7 @@ void ModPagePanel::refreshFromEngine()
         if (! active)
             continue;
 
-        mapName_[static_cast<size_t> (i)].setText (juce::String (sculpt::parameterName (id)),
-                                                   juce::dontSendNotification);
+        mapName_[static_cast<size_t> (i)].setText (name, juce::dontSendNotification);
         const auto& d = p.maps[static_cast<size_t> (trk)][static_cast<size_t> (slot)][static_cast<size_t> (pg)][static_cast<size_t> (i)];
         mapPolarT_[static_cast<size_t> (i)].setToggleState (d.bipolar != 0, juce::dontSendNotification);
         updatePolarButtonLabel (i);
@@ -421,7 +440,7 @@ void ModPagePanel::commitToEngine()
     for (int i = 0; i < sculpt::kMaxModMappingEncoders; ++i)
     {
         auto& cell = p.maps[static_cast<size_t> (trk)][static_cast<size_t> (slot)][static_cast<size_t> (pg)][static_cast<size_t> (i)];
-        if (sculpt::PageModel::parameterForSlot (page, i) == sculpt::ParameterId::Count)
+        if (! mapTargetActive (page, i))
         {
             cell.depth   = 0.0f;
             cell.bipolar = 0;
@@ -488,7 +507,7 @@ void ModPagePanel::resized()
         bool anyRow = false;
         for (int i = 0; i < sculpt::kMaxModMappingEncoders; ++i)
         {
-            if (sculpt::PageModel::parameterForSlot (page, i) != sculpt::ParameterId::Count)
+            if (mapTargetActive (page, i))
             {
                 anyRow = true;
                 break;
@@ -511,7 +530,7 @@ void ModPagePanel::resized()
 
         for (int i = 0; i < sculpt::kMaxModMappingEncoders; ++i)
         {
-            if (sculpt::PageModel::parameterForSlot (page, i) == sculpt::ParameterId::Count)
+            if (! mapTargetActive (page, i))
             {
                 zeroBounds (mapName_[static_cast<size_t> (i)]);
                 zeroBounds (mapPolarT_[static_cast<size_t> (i)]);

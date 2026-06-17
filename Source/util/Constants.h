@@ -12,9 +12,10 @@ constexpr int    kNumPages             = 7;
 // Encoder slots on device pages (Material..Mixer) used for mod mapping grid.
 constexpr int    kMaxModMappingEncoders  = 8;
 
-// Device pages that appear in the modulation mapping grid (Material..Mixer).
-// Keep in sync with Page enum order: Mod must be immediately after Mixer.
-constexpr int    kModMapTargetPages    = 6;
+// Pages that appear in the modulation mapping grid: the six device pages (Material..Mixer)
+// plus the Mod page (index 6 == Page::Mod), whose encoders target other mod slots' Amount/Rate.
+// Keep in sync with Page enum order: Mod is immediately after Mixer.
+constexpr int    kModMapTargetPages    = 7;
 // this are split by the Engine. All scratch buffers are sized from this.
 constexpr int    kMaxBlockSize         = 2048;
 
