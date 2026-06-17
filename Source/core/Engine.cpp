@@ -202,9 +202,10 @@ float Engine::warpEffectiveSpeedRatio (int trackIndex) const
     float        rootBpm = map::sampleRootBpm (params_.effective (trackIndex, ParameterId::SampleRootBpm));
     if (rootBpm < 1.0e-3f)
         rootBpm = 120.0f;
-    const float tapeKnob = params_.effective (trackIndex, ParameterId::TapeSpeed);
-    const bool  snapOn   = params_.effective (trackIndex, ParameterId::TapeSpeedSnap) > 0.5f;
-    return warpLaunchSync::warpTapeSpeedRatio (tapeKnob, snapOn, rootBpm, hostBpm);
+    const float       tapeKnob   = params_.effective (trackIndex, ParameterId::TapeSpeed);
+    const FilterScale pitchScale =
+        normalizedToFilterScale (params_.effective (trackIndex, ParameterId::MaterialPitchScale));
+    return warpLaunchSync::warpTapeSpeedRatio (tapeKnob, pitchScale, rootBpm, hostBpm);
 }
 
 void Engine::maybeResyncWarpPlayheadsAfterVarispeedChange (double beatNow)
@@ -582,6 +583,8 @@ void Engine::updateScreenModel()
         params_.effective (selected, ParameterId::MaterialTimeMode);
     screen_.selectedTrackTapeSpeedSnap01 =
         params_.effective (selected, ParameterId::TapeSpeedSnap);
+    screen_.selectedTrackMaterialPitchScale01 =
+        params_.effective (selected, ParameterId::MaterialPitchScale);
 
     const auto& matBuf = getTrackMaterialBuffer (selected);
     const auto& grSel  = tracks_[static_cast<size_t> (selected)].getEngine().getGranular();

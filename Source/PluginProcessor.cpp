@@ -136,7 +136,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
                 const juce::String pid = bridge::paramIdString (t, id);
                 const juce::String pname = "T" + juce::String (t + 1) + " " + parameterName (id);
 
-                if (id == ParameterId::FilterScale)
+                if (id == ParameterId::FilterScale || id == ParameterId::MaterialPitchScale)
                     addChoiceParam (layout, pid, pname, scaleChoices, id);
                 else if (id == ParameterId::FilterKey)
                     addChoiceParam (layout, pid, pname, keyChoices, id);

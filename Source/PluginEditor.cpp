@@ -180,7 +180,11 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     instrumentPanel_.setUiPage (currentPage_);
     // 60 Hz: LCD (mod hints, Mod oscilloscope, meters) tracks audio-thread ScreenModel with less lag than 30 Hz.
     startTimerHz (60);
-    setSize (980, 900);
+    // Resizable so the full knob grid (3 rows on Material/Space) fits on shorter laptop
+    // screens; layout in resized() is proportional. Default trimmed from 900 -> 820 tall.
+    setResizable (true, true);
+    setResizeLimits (900, 700, 1600, 1200);
+    setSize (980, 880);
 }
 
 int SculptSamplerAudioProcessorEditor::getSelectedTrackFromParameter() const
@@ -320,24 +324,6 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
             }
         }
 
-        if (id == sculpt::ParameterId::TapeSpeed && currentPage_ == sculpt::Page::Material)
-        {
-            control.tapeSnapToggle = std::make_unique<juce::ToggleButton>();
-            control.tapeSnapToggle->setButtonText ({});
-            control.tapeSnapToggle->setClickingTogglesState (true);
-            control.tapeSnapToggle->setTooltip (
-                "Tape mode: snap knob to 0/0.25/0.5/0.75/1. Warp mode: snap varispeed to 0.25x steps (1.0x, 1.25x, …).");
-            control.tapeSnapToggle->setColour (juce::ToggleButton::tickColourId, sculpt_editor::kAccent);
-            control.tapeSnapToggle->setColour (juce::ToggleButton::tickDisabledColourId,
-                                               sculpt_editor::kText.withAlpha (0.4f));
-            addAndMakeVisible (*control.tapeSnapToggle);
-            const auto snapPid = bridge::paramIdString (track, sculpt::ParameterId::TapeSpeedSnap);
-            if (apvts.getParameter (snapPid) != nullptr)
-                control.tapeSnapAttachment =
-                    std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
-                        apvts, snapPid, *control.tapeSnapToggle);
-        }
-
         pageControls_.push_back (std::move (control));
     }
 }
@@ -454,12 +440,13 @@ void SculptSamplerAudioProcessorEditor::resized()
     selectLabel_.setBounds (selectCol.removeFromTop (20));
     selectSlider_.setBounds (selectCol.reduced (4, 4));
 
-    const int knobMinH = 160;
-    const int lcdMinH = 350;
+    const int knobMinH = 200;
+    const int lcdMinH = 300;
     const int available = juce::jmax (lcdMinH + knobMinH, lcdKnobStack.getHeight());
-    // Many encoder rows (e.g. Space): give the knob stack more of the column so rows don't crush.
+    // Many encoder rows (e.g. Material/Space, 3 rows): give the knob stack more of the column
+    // so each knob stays large enough to read.
     const float lcdFrac =
-        (static_cast<int> (pageControls_.size()) > 8) ? 0.52f : 0.65f;
+        (static_cast<int> (pageControls_.size()) > 8) ? 0.44f : 0.6f;
     const int lcdH = juce::jlimit (lcdMinH, 440, juce::roundToInt (static_cast<float> (available) * lcdFrac));
 
     auto lcdBounds = lcdKnobStack.removeFromTop (lcdH);
@@ -508,15 +495,6 @@ void SculptSamplerAudioProcessorEditor::resized()
             pageControls_[i].spaceFreezeToggle->setBounds (cell.reduced (6, 10));
         else if (pageControls_[i].loopSnapToggle != nullptr)
             pageControls_[i].loopSnapToggle->setBounds (cell.reduced (6, 10));
-        if (pageControls_[i].tapeSnapToggle != nullptr)
-        {
-            constexpr int sq        = 12;
-            constexpr int marginR   = 10; // keep inside cell; column edge was clipping the right side
-            constexpr int marginTop = 3;
-            const int     x         = cell.getRight() - sq - marginR;
-            pageControls_[i].tapeSnapToggle->setBounds (x, cell.getY() + marginTop, sq, sq);
-            pageControls_[i].tapeSnapToggle->toFront (false);
-        }
     }
 }
 

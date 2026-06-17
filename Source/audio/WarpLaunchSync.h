@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../core/ParameterIds.h"
+#include "../core/FilterScales.h"
 
 #include <algorithm>
 #include <cmath>
@@ -10,8 +11,9 @@ namespace sculpt
 namespace warpLaunchSync
 {
 
-// Same warp speed law as Track::updateParameters (TapePlayer ratio; sign = reverse).
-inline float warpTapeSpeedRatio (float tapeKnobRaw, bool snapOn, float rootBpm, double hostBpm)
+// Same warp speed law as Track::updateParameters: tempo-sync, then transpose by the Pitch
+// knob (semitone transpose, scale-snapped; forward only).
+inline float warpTapeSpeedRatio (float tapeKnobRaw, FilterScale pitchScale, float rootBpm, double hostBpm)
 {
     float root = rootBpm < 1.0e-3f ? 120.0f : rootBpm;
     double hb    = hostBpm;
@@ -19,12 +21,8 @@ inline float warpTapeSpeedRatio (float tapeKnobRaw, bool snapOn, float rootBpm, 
         hb = static_cast<double> (root);
 
     float sync = static_cast<float> (hb / static_cast<double> (root));
-    sync         = std::clamp (sync, 0.1f, 10.0f);
-    float varis  = map::warpVarispeedMultiplier (tapeKnobRaw);
-    if (snapOn)
-        varis = map::quantizeWarpVarispeedMultiplier (varis);
-    const float sign = (tapeKnobRaw < 0.48f) ? -1.0f : 1.0f;
-    return sign * sync * varis;
+    sync       = std::clamp (sync, 0.1f, 10.0f);
+    return sync * materialPitchRatio (tapeKnobRaw, pitchScale);
 }
 
 // Beats (host quarter notes) for one pass through the normalized loop region at current warp speed.

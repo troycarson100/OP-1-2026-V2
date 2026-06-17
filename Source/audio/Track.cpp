@@ -111,7 +111,10 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
 
     auto& tape = engine_.getTape();
     const float tapeKnobRaw = get (ParameterId::TapeSpeed);
-    const bool  snapOn      = get (ParameterId::TapeSpeedSnap) > 0.5f;
+    // Pitch knob: semitone transpose (+/-24 st, center = 0 st), snapped to the Material scale
+    // (Free = continuous, no quantize). Applies in both Tape and Warp modes.
+    const FilterScale pitchScale = normalizedToFilterScale (get (ParameterId::MaterialPitchScale));
+    const float       pitchRatio = materialPitchRatio (tapeKnobRaw, pitchScale);
 
     float speedRatio = 0.0f;
     if (get (ParameterId::MaterialTimeMode) > 0.5f)
@@ -125,19 +128,13 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
             hb = static_cast<double> (rootBpm);
 
         float sync = static_cast<float> (hb / static_cast<double> (rootBpm));
-        sync         = std::clamp (sync, 0.1f, 10.0f);
-        float varis  = map::warpVarispeedMultiplier (tapeKnobRaw);
-        if (snapOn)
-            varis = map::quantizeWarpVarispeedMultiplier (varis);
-        const float sign = (tapeKnobRaw < 0.48f) ? -1.0f : 1.0f;
-        speedRatio       = sign * sync * varis;
+        sync       = std::clamp (sync, 0.1f, 10.0f);
+        // Warp: tempo-sync to host, then transpose by the Pitch knob (forward only).
+        speedRatio = sync * pitchRatio;
     }
     else
     {
-        float tapeKnob = tapeKnobRaw;
-        if (snapOn)
-            tapeKnob = map::quantizeNormalizedQuarter (tapeKnob);
-        speedRatio = map::tapeSpeedRatio (tapeKnob);
+        speedRatio = pitchRatio;
     }
     float loopLo = get (ParameterId::LoopStart);
     float loopHi = get (ParameterId::LoopEnd);

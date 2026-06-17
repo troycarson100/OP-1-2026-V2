@@ -16,7 +16,6 @@ namespace
 
     // Fixed minimum for the bottom parameter readout; grows when >8 params (e.g. Space).
     constexpr int kValueGridMinH = 168;
-    constexpr float kWaveformFraction = 0.45f;
 
     void drawLoopRegion (juce::Graphics& g, juce::Rectangle<float> rect, float lo01, float hi01)
     {
@@ -298,25 +297,45 @@ namespace
             drawOneTrackMeter (g, meterArea.removeFromTop (rowHeight), screen, t);
         drawMasterMeter (g, meterArea.removeFromTop (rowHeight), screen);
     }
-    // Warp tape readout: must match the Time Mode cell on the Material row (slot 2). Scan + engine
-    // hint are fallbacks for any future layout change.
-    float materialWarpKnob01ForTapeReadout (const sculpt::ScreenModel& screen)
-    {
-        constexpr int kMaterialTimeModeSlot = 2;
-        if (screen.selectedPage == sculpt::Page::Material
-            && screen.numVisibleParams > kMaterialTimeModeSlot
-            && sculpt::PageModel::parameterForSlot (sculpt::Page::Material, kMaterialTimeModeSlot)
-                   == sculpt::ParameterId::MaterialTimeMode
-            && screen.paramIds[static_cast<size_t> (kMaterialTimeModeSlot)]
-                   == sculpt::ParameterId::MaterialTimeMode)
-            return screen.paramValues[static_cast<size_t> (kMaterialTimeModeSlot)];
 
-        for (int s = 0; s < screen.numVisibleParams; ++s)
+    // Vertical output meters in a fixed right-side column (identical position on every page):
+    // selected track level + master L / R, filling from the bottom up.
+    void drawVerticalMeters (juce::Graphics& g, juce::Rectangle<int> col, const sculpt::ScreenModel& screen)
+    {
+        const int  st = juce::jlimit (0, sculpt::kNumTracks - 1, screen.selectedTrack);
+        const auto ts = static_cast<size_t> (st);
+
+        auto inner    = col.reduced (3, 2);
+        const int labelH = 12;
+        auto labelRow = inner.removeFromBottom (labelH);
+        inner.removeFromBottom (2);
+
+        struct Bar { float level; juce::Colour colour; const char* label; };
+        const Bar bars[3] = {
+            { screen.trackMeter[ts], screen.trackPlaying[ts] ? kMeter : kMeter.withAlpha (0.4f), "T" },
+            { screen.masterMeterL, kAccent, "L" },
+            { screen.masterMeterR, kAccent, "R" },
+        };
+        constexpr int n   = 3;
+        constexpr int gap = 4;
+        const int barW = juce::jmax (3, (inner.getWidth() - gap * (n - 1)) / n);
+
+        g.setFont (juce::FontOptions (10.0f));
+        int x = inner.getX();
+        for (int i = 0; i < n; ++i)
         {
-            if (screen.paramIds[static_cast<size_t> (s)] == sculpt::ParameterId::MaterialTimeMode)
-                return screen.paramValues[static_cast<size_t> (s)];
+            juce::Rectangle<int> barRect (x, inner.getY(), barW, inner.getHeight());
+            g.setColour (kBackground);
+            g.fillRect (barRect);
+            const float lvl = juce::jlimit (0.0f, 1.0f, bars[i].level);
+            const int   h   = juce::roundToInt (static_cast<float> (barRect.getHeight()) * lvl);
+            g.setColour (bars[i].colour);
+            g.fillRect (barRect.withTop (barRect.getBottom() - h));
+            g.setColour (kText.withAlpha (0.6f));
+            g.drawText (bars[i].label, juce::Rectangle<int> (x, labelRow.getY(), barW, labelH),
+                        juce::Justification::centred);
+            x += barW + gap;
         }
-        return screen.selectedTrackMaterialTimeMode01;
     }
 
     float spaceDelayTimeMode01FromScreen (const sculpt::ScreenModel& screen)
@@ -334,6 +353,7 @@ namespace
         switch (id)
         {
             case P::FilterScale:
+            case P::MaterialPitchScale:
                 return sculpt::filterScaleName (sculpt::normalizedToFilterScale (v));
             case P::FilterKey:
                 return sculpt::filterKeyName (sculpt::normalizedToKeyIndex (v));
@@ -341,17 +361,11 @@ namespace
                 return (v > 0.5f) ? "Ring" : "LP/BP/HP";
             case P::TapeSpeed:
             {
-                const bool snap = screen.selectedTrackTapeSpeedSnap01 > 0.5f;
-                if (materialWarpKnob01ForTapeReadout (screen) > 0.5f)
-                {
-                    float m = sculpt::map::warpVarispeedMultiplier (v);
-                    if (snap)
-                        m = sculpt::map::quantizeWarpVarispeedMultiplier (m);
-                    const bool rev = (v < 0.48f);
-                    return juce::String::formatted ("%s%.2fx", rev ? "-" : "", (double) m);
-                }
-                const float vDisp = snap ? sculpt::map::quantizeNormalizedQuarter (v) : v;
-                return juce::String (sculpt::map::tapeSpeedDisplay (vDisp));
+                // Pitch: semitone transpose, snapped to the Material scale when set (both modes).
+                const auto pitchScale =
+                    sculpt::normalizedToFilterScale (screen.selectedTrackMaterialPitchScale01);
+                const int  semis = juce::roundToInt (sculpt::materialPitchSemitones (v, pitchScale));
+                return juce::String::formatted ("%+d st", semis);
             }
             case P::MaterialTimeMode:
                 return (v > 0.5f) ? "Warp" : "Tape";
@@ -936,6 +950,13 @@ void InstrumentPanel::paint (juce::Graphics& g)
     g.drawText (bpmTxt, headerStrip, juce::Justification::centredRight);
     g.setColour (kText);
 
+    // Output meters: fixed vertical column on the right — identical position on every page.
+    // Reserved before the value grid / page visuals so both flow to the left of it.
+    constexpr int meterColW = 44;
+    auto meterCol = area.removeFromRight (meterColW);
+    area.removeFromRight (6);
+    drawVerticalMeters (g, meterCol, screen);
+
     const bool materialPage = (lcdPage == sculpt::Page::Material);
     const bool granularPage = (lcdPage == sculpt::Page::Granular);
     const bool filterPage   = (lcdPage == sculpt::Page::Filter);
@@ -959,16 +980,11 @@ void InstrumentPanel::paint (juce::Graphics& g)
 
     if (waveformPage)
     {
-        // Split what remains above into: waveform, strip, meters.
+        // Meters now live in the right-side column, so the waveform gets the full height here
+        // (minus the secondary strip below it).
         const int stripH    = 24;
-        const int rowH      = 28;
-        const int meterH    = 4 + rowH + rowH + 4;
         const int topBudget = area.getHeight();
-
-        const int fixedAbove = stripH + meterH;
-        const int wfMax      = juce::jmax (0, topBudget - fixedAbove);
-        const int wfH        = juce::jlimit (0, wfMax,
-                                  juce::roundToInt (static_cast<float> (topBudget) * kWaveformFraction));
+        const int wfH       = juce::jmax (0, topBudget - stripH - 4);
 
         auto wfArea = area.removeFromTop (wfH).toFloat().reduced (1.0f, 2.0f);
         g.setColour (kLcdWaveformBg);
@@ -1003,10 +1019,6 @@ void InstrumentPanel::paint (juce::Graphics& g)
             play01             = juce::jlimit (0.0f, 1.0f, play01);
         }
         drawPlayhead (g, playRect, play01);
-
-        area.removeFromTop (4);
-        drawOneTrackMeter (g, area.removeFromTop (rowH), screen, st);
-        drawMasterMeter (g, area.removeFromTop (rowH), screen);
     }
     else if (mixerLcd)
     {
@@ -1040,23 +1052,10 @@ void InstrumentPanel::paint (juce::Graphics& g)
     }
     else if (modPage)
     {
-        const int stripH = 0;
-        const int rowH   = 28;
-        const int topBudget = area.getHeight();
-        const int fixedBelow = rowH + rowH + 4;
-        const int wfMax      = juce::jmax (0, topBudget - fixedBelow);
-        const int wfH        = juce::jlimit (0, wfMax,
-                                  juce::roundToInt (static_cast<float> (topBudget) * kWaveformFraction));
-
+        // Meters moved to the right column; oscilloscope takes the full height.
+        const int wfH = juce::jmax (0, area.getHeight() - 4);
         auto wfArea = area.removeFromTop (wfH).toFloat().reduced (1.0f, 2.0f);
         drawModOscilloscope (g, wfArea, screen.modLcd);
-
-        if (stripH > 0)
-            area.removeFromTop (stripH);
-        area.removeFromTop (4);
-        const int st = juce::jlimit (0, sculpt::kNumTracks - 1, screen.selectedTrack);
-        drawOneTrackMeter (g, area.removeFromTop (rowH), screen, st);
-        drawMasterMeter (g, area.removeFromTop (rowH), screen);
     }
     else if (filterPage)
     {

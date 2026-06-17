@@ -117,6 +117,10 @@ enum class ParameterId : int
     // When on, Loop Start / Loop End snap to a fixed grid (see map::snapLoopPair01).
     LoopSnapGrid,
 
+    // Material pitch scale lock (FilterScale index). Free = off; otherwise the Tape Speed
+    // knob is remapped to even semitone steps snapped to this scale (tape mode only).
+    MaterialPitchScale,
+
     Count
 };
 
@@ -142,7 +146,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::TrackLevel:      return 0.8f;
         case ParameterId::TrackPan:        return 0.5f;
         case ParameterId::MaterialLevel:   return 0.8f;
-        case ParameterId::TapeSpeed:       return 0.5f;   // stopped (display 0, ratio 0)
+        case ParameterId::TapeSpeed:       return 0.5f;   // Pitch: center = 0 semitones (original pitch)
         case ParameterId::LoopStart:       return 0.0f;
         case ParameterId::LoopEnd:         return 1.0f;
         case ParameterId::GrainPosition:   return 0.30f;
@@ -200,6 +204,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialTimeMode: return 0.0f;   // tape mode
         case ParameterId::SampleRootBpm:   return 0.4f;    // 120 BPM (40 + 0.4*200)
         case ParameterId::TapeSpeedSnap:   return 0.0f;   // off
+        case ParameterId::MaterialPitchScale: return 0.0f; // Free (off)
         case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -458,7 +463,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::TrackLevel:      return "Level";
         case ParameterId::TrackPan:        return "Pan";
         case ParameterId::MaterialLevel:   return "Material Level";
-        case ParameterId::TapeSpeed:       return "Tape Speed";
+        case ParameterId::TapeSpeed:       return "Pitch";
         case ParameterId::LoopStart:       return "Loop Start";
         case ParameterId::LoopEnd:         return "Loop End";
         case ParameterId::GrainPosition:   return "Grain Position";
@@ -516,6 +521,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MaterialTimeMode: return "Time Mode";
         case ParameterId::SampleRootBpm:   return "Root BPM";
         case ParameterId::TapeSpeedSnap:   return "Snap 1/4";
+        case ParameterId::MaterialPitchScale: return "Scale";
         case ParameterId::LoopSnapGrid:    return "Loop Snap";
         default:                           return "Unknown";
     }
