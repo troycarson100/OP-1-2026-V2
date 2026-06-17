@@ -28,6 +28,10 @@ public:
     void setLoopMode (bool shouldLoop) { loopMode_ = shouldLoop; }
     void setLevel (float gain)         { level_ = gain; }
 
+    // Loop crossfade lengths in seconds: attack = fade-in of the new loop head, release =
+    // fade-out of the old loop tail. They overlap at the wrap to crossfade the seam.
+    void setLoopFades (float attackSec, float releaseSec);
+
     float getPositionNormalized (int numFrames) const;
 
     // Snap read position to normalized time within the loop region (message / param sync).
@@ -68,9 +72,13 @@ private:
     float  scrubOutLp2R_   = 0.0f;
     bool   scrubLpPrimed_  = false;
 
-    // Equal-power blend after a forced wrap (moving loop past the playhead, natural wrap, etc.).
+    // Crossfade blend after a wrap. attackSamples_/releaseSamples_ shape the new-head fade-in and
+    // old-tail fade-out; wrapBlendLen_ is the active window length when a wrap is triggered.
     int    wrapBlendRemain_ = 0;
     double wrapBlendFromPos_ = 0.0;
+    int    attackSamples_  = 384;
+    int    releaseSamples_ = 384;
+    int    wrapBlendLen_   = 384;
 };
 
 } // namespace sculpt

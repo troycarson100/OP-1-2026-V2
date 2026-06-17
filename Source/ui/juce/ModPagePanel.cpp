@@ -132,6 +132,9 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
 
     wireSlider (rndRate_, 0.1f, 24.0f);
     wireSlider (rndSlew_, 0.0f, 1.0f);
+    wireSlider (rndAmount_, 0.0f, 100.0f);
+    rndAmount_.textFromValueFunction = [] (double v) { return juce::String (juce::roundToInt (v)); };
+    rndAmount_.valueFromTextFunction = [] (const juce::String& t) { return static_cast<double> (t.getIntValue()); };
 
     wireSlider (adsrA_, 0.001f, 3.0f);
     wireSlider (adsrD_, 0.001f, 3.0f);
@@ -166,7 +169,7 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
     waveSyncT_.setClickingTogglesState (true);
     rndSyncT_.setClickingTogglesState (true);
 
-    for (auto& l : { &waveRateL_, &waveShapeL_, &waveAmtL_, &waveBendL_, &rndRateL_, &rndSlewL_, &adA_, &adD_, &adS_, &adR_ })
+    for (auto& l : { &waveRateL_, &waveShapeL_, &waveAmtL_, &waveBendL_, &rndRateL_, &rndSlewL_, &rndAmtL_, &adA_, &adD_, &adS_, &adR_ })
     {
         l->setJustificationType (juce::Justification::centredRight);
         addAndMakeVisible (*l);
@@ -199,7 +202,7 @@ ModPagePanel::ModPagePanel (SculptSamplerAudioProcessor& processor)
         addAndMakeVisible (s);
     }
 
-    for (auto& s : { &waveRate_, &waveAmount_, &waveBend_, &rndRate_, &rndSlew_, &adsrA_, &adsrD_, &adsrS_, &adsrR_ })
+    for (auto& s : { &waveRate_, &waveAmount_, &waveBend_, &rndRate_, &rndSlew_, &rndAmount_, &adsrA_, &adsrD_, &adsrS_, &adsrR_ })
         addAndMakeVisible (*s);
 
     for (auto& l : mapName_)
@@ -304,6 +307,8 @@ void ModPagePanel::kindChanged()
     rndRate_.setVisible (rnd);
     rndSlewL_.setVisible (rnd);
     rndSlew_.setVisible (rnd);
+    rndAmtL_.setVisible (rnd);
+    rndAmount_.setVisible (rnd);
     if (rnd)
         syncRandomControlsEnabled();
 
@@ -347,6 +352,7 @@ void ModPagePanel::refreshFromEngine()
         juce::dontSendNotification);
     rndRate_.setValue (sp.randomRateHz, juce::dontSendNotification);
     rndSlew_.setValue (sp.randomSlew01, juce::dontSendNotification);
+    rndAmount_.setValue (static_cast<double> (sculpt::clamp01 (sp.randomAmount)) * 100.0, juce::dontSendNotification);
 
     adsrA_.setValue (sp.adsrAttackSec, juce::dontSendNotification);
     adsrD_.setValue (sp.adsrDecaySec, juce::dontSendNotification);
@@ -403,6 +409,7 @@ void ModPagePanel::commitToEngine()
     sp.randomDivision = static_cast<uint8_t> (juce::jlimit (0, sculpt::kNumSyncDivisions - 1, rndDivCombo_.getSelectedItemIndex()));
     sp.randomRateHz = static_cast<float> (rndRate_.getValue());
     sp.randomSlew01 = static_cast<float> (rndSlew_.getValue());
+    sp.randomAmount = sculpt::clamp01 (static_cast<float> (rndAmount_.getValue() / 100.0));
 
     sp.adsrAttackSec  = static_cast<float> (adsrA_.getValue());
     sp.adsrDecaySec   = static_cast<float> (adsrD_.getValue());
@@ -572,6 +579,8 @@ void ModPagePanel::resized()
         rndRate_.setBounds (n2);
         auto n3 = R.removeFromTop (26);
         placeLabeledSlider (n3, rndSlewL_, rndSlew_, 44);
+        auto n4 = R.removeFromTop (26);
+        placeLabeledSlider (n4, rndAmtL_, rndAmount_, 72);
     }
     else
     {
@@ -582,6 +591,8 @@ void ModPagePanel::resized()
         zeroBounds (rndRate_);
         zeroBounds (rndSlewL_);
         zeroBounds (rndSlew_);
+        zeroBounds (rndAmtL_);
+        zeroBounds (rndAmount_);
     }
 
     if (adsr)

@@ -61,6 +61,8 @@ private:
     juce::Slider      rndRate_;
     juce::Label       rndSlewL_ { {}, "Slew" };
     juce::Slider      rndSlew_;
+    juce::Label       rndAmtL_ { {}, "Amount %" };
+    juce::Slider      rndAmount_;
 
     juce::Label       adsrSection_ { {}, "ADSR" };
     juce::Label       adA_ { {}, "A" };

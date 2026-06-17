@@ -7,6 +7,19 @@ namespace
 {
     constexpr ParameterId kEmpty = ParameterId::Count;
 
+    // Material: two 8-encoder banks (S-4-style split). p1 = loop + pitch/scale performance,
+    // p2 = mode / capture / utility. Indexed by the shared encoder sub-page.
+    constexpr ParameterId kMaterialEncoderPage[2][8] = {
+        // Page 1: Level, Loop Start, Loop End, Playhead, Pitch, Scale, Key, Cross Fade
+        { ParameterId::MaterialLevel, ParameterId::LoopStart, ParameterId::LoopEnd,
+          ParameterId::MaterialPlayhead, ParameterId::TapeSpeed, ParameterId::MaterialPitchScale,
+          ParameterId::MaterialPitchKey, ParameterId::MaterialLoopXfade },
+        // Page 2: Grid Snap, Time Mode, Root BPM, Capture Arm, Wave Zoom
+        { ParameterId::LoopSnapGrid, ParameterId::MaterialTimeMode, ParameterId::SampleRootBpm,
+          ParameterId::CaptureArm, ParameterId::MaterialWaveZoom, ParameterId::Count,
+          ParameterId::Count, ParameterId::Count },
+    };
+
     // Granular: two 8-encoder banks.
     // p1=core sound / p2=rhythm+pitch+pattern (S-4-style split).
     constexpr ParameterId kGranularEncoderPage[2][8] = {
@@ -24,13 +37,9 @@ namespace
     // ParameterId{} == OutputGain (enum starts at 0), which breaks UI loops that stop on Count.
     constexpr ParameterId kPageParams[static_cast<int> (Page::Count)][kMaxParamsPerPage] =
     {
-        // Material: TimeMode + RootBpm replace Wave Zoom on the LCD row (zoom remains in APVTS / editor).
-        { ParameterId::MaterialLevel, ParameterId::TapeSpeed, ParameterId::MaterialTimeMode,
-          ParameterId::SampleRootBpm, ParameterId::LoopStart, ParameterId::LoopEnd,
-          ParameterId::CaptureArm, ParameterId::MaterialPlayhead,
-          ParameterId::LoopSnapGrid, ParameterId::MaterialPitchScale,
-          ParameterId::MaterialPitchKey,
-          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
+        // Material row unused for slots — uses kMaterialEncoderPage + encoder sub-page in parameterForSlot.
+        { kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
+          kEmpty, kEmpty, kEmpty },
         // Granular row unused for slots — use kGranularEncoderPage + granularEncoderPage in parameterForSlot.
         { kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
           kEmpty, kEmpty, kEmpty },
@@ -88,6 +97,14 @@ ParameterId PageModel::parameterForSlot (Page page, int slot, int granularEncode
             return kEmpty;
         const int g = std::clamp (granularEncoderPage, 0, 1);
         return kGranularEncoderPage[static_cast<size_t> (g)][static_cast<size_t> (slot)];
+    }
+
+    if (page == Page::Material)
+    {
+        if (slot >= 8)
+            return kEmpty;
+        const int g = std::clamp (granularEncoderPage, 0, 1);
+        return kMaterialEncoderPage[static_cast<size_t> (g)][static_cast<size_t> (slot)];
     }
 
     return kPageParams[p][slot];

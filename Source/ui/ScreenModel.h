@@ -120,6 +120,9 @@ struct ScreenModel
     // Selected track tape loop region (normalized, same as tape uses) for Material LCD.
     float materialLoopStart01 = 0.0f;
     float materialLoopEnd01   = 1.0f;
+    // Loop crossfade lengths as a fraction of the full buffer, for the Material fade overlay.
+    float materialLoopFadeIn01  = 0.0f; // attack, at loop start
+    float materialLoopFadeOut01 = 0.0f; // release, at loop end
 
     // Material waveform: total length (seconds) and horizontal view window across the buffer.
     float materialDurationSec = 0.0f;

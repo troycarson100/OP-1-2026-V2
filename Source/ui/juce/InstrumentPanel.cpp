@@ -160,6 +160,50 @@ namespace
         g.strokePath (path, juce::PathStrokeType (1.2f));
     }
 
+    // Loop crossfade overlay: a gain envelope across the loop region (rises over the attack at
+    // the loop start, falls over the release at the loop end) so the blend regions are visible.
+    void drawLoopFades (juce::Graphics& g, juce::Rectangle<float> wfArea,
+                        const sculpt::ScreenModel& screen)
+    {
+        const float fi = screen.materialLoopFadeIn01;
+        const float fo = screen.materialLoopFadeOut01;
+        if (fi <= 0.0f && fo <= 0.0f)
+            return;
+
+        const float v0   = screen.materialViewStart01;
+        const float v1   = screen.materialViewEnd01;
+        const float span = std::max (1.0e-5f, v1 - v0);
+        auto xFor = [&] (float b) {
+            return wfArea.getX() + (b - v0) / span * wfArea.getWidth();
+        };
+
+        const float ls  = screen.materialLoopStart01;
+        const float le  = screen.materialLoopEnd01;
+        const float top = wfArea.getY() + 2.0f;
+        const float bot = wfArea.getBottom() - 2.0f;
+
+        const float xLs  = xFor (ls);
+        const float xAtk = xFor (ls + fi);
+        const float xRel = xFor (le - fo);
+        const float xLe  = xFor (le);
+
+        juce::Path env;
+        env.startNewSubPath (xLs, bot);
+        env.lineTo (xAtk, top);
+        env.lineTo (xRel, top);
+        env.lineTo (xLe, bot);
+
+        juce::Graphics::ScopedSaveState ss (g);
+        g.reduceClipRegion (wfArea.toNearestInt());
+
+        juce::Path fill = env;
+        fill.closeSubPath();
+        g.setColour (kAccent.withAlpha (0.12f));
+        g.fillPath (fill);
+        g.setColour (kAccent.withAlpha (0.7f));
+        g.strokePath (env, juce::PathStrokeType (1.4f));
+    }
+
     void drawGrainOverlay (juce::Graphics& g, juce::Rectangle<float> wfArea,
                            const sculpt::ScreenModel& screen)
     {
@@ -358,6 +402,8 @@ namespace
             case P::FilterKey:
             case P::MaterialPitchKey:
                 return sculpt::filterKeyName (sculpt::normalizedToKeyIndex (v));
+            case P::MaterialLoopXfade:
+                return juce::String (juce::roundToInt (sculpt::map::loopFadeSeconds (v) * 1000.0f)) + " ms";
             case P::FilterMode:
                 return (v > 0.5f) ? "Ring" : "LP/BP/HP";
             case P::TapeSpeed:
@@ -1004,6 +1050,8 @@ void InstrumentPanel::paint (juce::Graphics& g)
             drawLoopRegion (g, wfArea, screen.materialLoopStart01, screen.materialLoopEnd01);
         }
         drawSymmetricEnvelope (g, wfArea, waveformPeaks_);
+        if (materialPage)
+            drawLoopFades (g, wfArea, screen);
         if (granularPage)
             drawGrainOverlay (g, wfArea, screen);
 

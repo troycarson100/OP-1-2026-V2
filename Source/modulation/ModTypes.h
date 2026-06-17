@@ -37,6 +37,7 @@ struct ModPatchSlotParams
 
     float randomRateHz  = 2.5f;
     float randomSlew01  = 0.5f;
+    float randomAmount  = 1.0f;   // 0..1 depth; UI shows 0..100%
     uint8_t randomSync   = 0;
     uint8_t randomDivision = 8;
 

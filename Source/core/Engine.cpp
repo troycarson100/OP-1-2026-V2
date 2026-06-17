@@ -632,6 +632,15 @@ void Engine::updateScreenModel()
     else
         screen_.materialDurationSec = 0.0f;
 
+    {
+        const float durSec   = screen_.materialDurationSec;
+        const float xfadeSec = map::loopFadeSeconds (params_.effective (selected, ParameterId::MaterialLoopXfade));
+        const float loopW    = std::max (1.0e-4f, leDisp - lsDisp);
+        const float frac     = (durSec > 1.0e-6f) ? std::min (xfadeSec / durSec, loopW * 0.5f) : 0.0f;
+        screen_.materialLoopFadeIn01  = frac;
+        screen_.materialLoopFadeOut01 = frac;
+    }
+
     const int matFrames = matBuf.getNumFrames();
     if (selectedPage_ == Page::Material && matFrames > 1)
     {
@@ -692,7 +701,12 @@ void Engine::updateScreenModel()
         const int    trk    = getSelectedTrack();
         const int    slot   = modLcdSlot_.load (std::memory_order_relaxed);
         const double beatEnd = clock_.getBeatPosition();
-        modEngine_.writeModLcdSnapshot (trk, slot, inputEnvelope_.getValue(), beatEnd, screen_.modLcd);
+        // Build into a local then assign once: writeModLcdSnapshot transiently sets active=false
+        // and zeroes the curves before filling them. Writing that directly into the shared
+        // screen_.modLcd lets the GUI catch the blank state mid-update -> whole-LCD flicker.
+        ModLcdSnapshot snap;
+        modEngine_.writeModLcdSnapshot (trk, slot, inputEnvelope_.getValue(), beatEnd, snap);
+        screen_.modLcd = snap;
     }
     else
         screen_.modLcd.active = false;

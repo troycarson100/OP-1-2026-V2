@@ -123,6 +123,10 @@ enum class ParameterId : int
     // Material scale root / key (pitch class 0=C .. 11=B). Tonic the scale is rooted on.
     MaterialPitchKey,
 
+    // Loop crossfade length (normalized -> seconds via map::loopFadeSeconds). The old loop tail
+    // and new loop head fade out/in over this time, overlapping at the wrap to blend the seam.
+    MaterialLoopXfade,
+
     Count
 };
 
@@ -208,6 +212,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::TapeSpeedSnap:   return 0.0f;   // off
         case ParameterId::MaterialPitchScale: return 0.0f; // Free (off)
         case ParameterId::MaterialPitchKey:   return 0.0f; // C
+        case ParameterId::MaterialLoopXfade:   return 0.18f; // ~10 ms
         case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -281,6 +286,9 @@ namespace map
     inline float grainSizeSeconds (float n)  { return 0.02f + n * n * 1.92f; }   // ~20 ms .. ~2.0 s
     inline float grainDensityHz (float n)    { return 1.0f + n * n * 59.0f; }    // 1 .. 60 grains/s
     inline float grainPitchRatio (float n)   { return semitonesToRatio ((n - 0.5f) * 12.0f); } // +/- 12 semitones
+
+    // Loop crossfade length: 0 .. ~300 ms, quadratic for fine control at the short end.
+    inline float loopFadeSeconds (float n)   { const float c = clamp01 (n); return c * c * 0.30f; }
 
     // Synced mode: beats between grain hits (musical interval). Table order: whole .. 1/32 with dotted/triplets.
     inline int grainRateDivisionTableIndex (float n01)
@@ -465,7 +473,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::Macro4:          return "Macro 4";
         case ParameterId::TrackLevel:      return "Level";
         case ParameterId::TrackPan:        return "Pan";
-        case ParameterId::MaterialLevel:   return "Material Level";
+        case ParameterId::MaterialLevel:   return "Level";
         case ParameterId::TapeSpeed:       return "Pitch";
         case ParameterId::LoopStart:       return "Loop Start";
         case ParameterId::LoopEnd:         return "Loop End";
@@ -526,6 +534,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::TapeSpeedSnap:   return "Snap 1/4";
         case ParameterId::MaterialPitchScale: return "Scale";
         case ParameterId::MaterialPitchKey:   return "Key";
+        case ParameterId::MaterialLoopXfade:   return "Cross Fade";
         case ParameterId::LoopSnapGrid:    return "Loop Snap";
         default:                           return "Unknown";
     }

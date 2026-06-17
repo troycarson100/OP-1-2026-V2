@@ -110,7 +110,7 @@ float ModEngine::sourceValue (int track, int slot, float inputEnv01, int numSamp
                 r.setSlew (sp.randomSlew01);
                 r.update (numSamples);
             }
-            return r.getValue();
+            return r.getValue() * clamp01 (sp.randomAmount);
         }
         case ModulatorKind::ADSR:
         {
@@ -276,29 +276,53 @@ void ModEngine::writeModLcdSnapshot (int track, int slot, float inputEnv01, doub
 
         case ModulatorKind::Random:
         {
-            const auto& r = rnds_[static_cast<size_t> (track)][static_cast<size_t> (slot)];
-            const float rv = r.getValue ();
+            // S-4-style sample & hold: a fixed row of steps with a playhead that sweeps left ->
+            // right and wraps. Each step updates to a new value the instant the playhead reaches
+            // it (one at a time); values are stable between visits, so there is no per-frame
+            // flicker. Steps left of / under the playhead show the current sweep, those to the
+            // right still show the previous sweep until the playhead gets to them.
+            const float amt = clamp01 (sp.randomAmount);
+
+            double stepsPerBeat = (sp.randomSync != 0)
+                ? syncDivisionCyclesPerBeat (static_cast<int> (sp.randomDivision))
+                : 2.0; // representative sweep rate for free-Hz mode
+            if (stepsPerBeat < 1.0e-3)
+                stepsPerBeat = 1.0;
+
+            constexpr int nSteps = 8;
+            const double  p    = beatAtEnd * stepsPerBeat;            // continuous step position
+            const long    g    = static_cast<long> (std::floor (p));  // global step index
+            const float   frac = static_cast<float> (p - static_cast<double> (g));
+            const int     cur  = static_cast<int> (((g % nSteps) + nSteps) % nSteps); // playhead step
+
+            auto hash01 = [] (long k) -> float {
+                uint32_t x = static_cast<uint32_t> (k) * 2654435761u + 1013904223u;
+                x ^= x >> 16; x *= 0x7feb352du; x ^= x >> 15; x *= 0x846ca68bu; x ^= x >> 16;
+                return 0.12f + 0.88f * static_cast<float> (x & 0xFFFFFFu) / static_cast<float> (0xFFFFFF);
+            };
+
+            // Each step's height = the value from the last time the playhead visited it.
+            float stepH[nSteps];
+            for (int j = 0; j < nSteps; ++j)
+            {
+                const int  back = (((cur - j) % nSteps) + nSteps) % nSteps; // steps since last visit
+                stepH[j] = hash01 (g - back);
+            }
+
             for (int i = 0; i < ModLcdSnapshot::kBins; ++i)
             {
-                const float w1 = std::sin (static_cast<float> (i) * 0.27f
-                                             + static_cast<float> (beatAtEnd) * 5.5f);
-                const float w2 = std::sin (static_cast<float> (i) * 0.09f + static_cast<float> (beatAtEnd) * 2.1f);
-                const float h  = clamp01 (0.42f + 0.38f * std::fabs (rv) + 0.22f * w1 * std::fabs (rv)
-                                         + 0.12f * w2 * std::fabs (rv));
-                out.carrier01[static_cast<size_t> (i)]   = h;
-                out.effective01[static_cast<size_t> (i)] = clamp01 (h * (0.35f + 0.65f * std::fabs (rv)));
+                int slot = (i * nSteps) / ModLcdSnapshot::kBins;
+                if (slot >= nSteps)
+                    slot = nSteps - 1;
+                out.carrier01[static_cast<size_t> (i)]   = stepH[slot];
+                out.effective01[static_cast<size_t> (i)] = stepH[slot] * amt;
             }
-            if (sp.randomSync != 0)
-            {
-                const double c = syncDivisionCyclesPerBeat (static_cast<int> (sp.randomDivision));
-                out.scannerPhase01 = static_cast<float> (wrapPhase01 (beatAtEnd * c));
-            }
-            else
-                out.scannerPhase01 = static_cast<float> (wrapPhase01 (beatAtEnd * 0.18));
 
-            out.valueBipolar = rv;
-            out.amount01   = clamp01 (sp.randomSlew01);
-            out.active     = true;
+            // Playhead sweeps 0 -> 1 across the steps; dot rides the current step's level.
+            out.scannerPhase01 = (static_cast<float> (cur) + frac) / static_cast<float> (nSteps);
+            out.valueBipolar   = stepH[cur] * amt;
+            out.amount01       = amt;
+            out.active         = true;
             return;
         }
 

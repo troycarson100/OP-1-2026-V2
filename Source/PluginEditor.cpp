@@ -176,7 +176,7 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
 
     rebuildPageControls();
     for (auto& b : granularEncoderPageButtons_)
-        b.setVisible (currentPage_ == sculpt::Page::Granular);
+        b.setVisible (currentPage_ == sculpt::Page::Granular || currentPage_ == sculpt::Page::Material);
     instrumentPanel_.setUiPage (currentPage_);
     // 60 Hz: LCD (mod hints, Mod oscilloscope, meters) tracks audio-thread ScreenModel with less lag than 30 Hz.
     startTimerHz (60);
@@ -211,7 +211,7 @@ void SculptSamplerAudioProcessorEditor::selectPage (sculpt::Page page)
     processor_.getEngine().setSelectedPage (page);
     instrumentPanel_.setUiPage (currentPage_);
     for (auto& b : granularEncoderPageButtons_)
-        b.setVisible (currentPage_ == sculpt::Page::Granular);
+        b.setVisible (currentPage_ == sculpt::Page::Granular || currentPage_ == sculpt::Page::Material);
     rebuildPageControls();
     resized();
 }
@@ -232,7 +232,9 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
         return;
     }
 
-    const int granularEncPage = (currentPage_ == sculpt::Page::Granular)
+    const bool usesEncoderPages = (currentPage_ == sculpt::Page::Granular
+                                    || currentPage_ == sculpt::Page::Material);
+    const int granularEncPage = usesEncoderPages
                                     ? processor_.getEngine().getGranularEncoderPage()
                                     : 0;
 
@@ -263,28 +265,6 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
                 control.spaceFreezeAttachment =
                     std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
                         apvts, paramId, *control.spaceFreezeToggle);
-        }
-        else if (id == sculpt::ParameterId::LoopSnapGrid)
-        {
-            control.loopSnapToggle = std::make_unique<juce::ToggleButton> ("Grid");
-            control.loopSnapToggle->setClickingTogglesState (true);
-            control.loopSnapToggle->setTooltip ("Snap Loop Start / End to a 1/64 buffer grid.");
-            control.loopSnapToggle->setColour (juce::ToggleButton::textColourId, kText);
-            control.loopSnapToggle->setColour (juce::ToggleButton::tickColourId, kAccent);
-            addAndMakeVisible (*control.loopSnapToggle);
-
-            control.label = std::make_unique<juce::Label>();
-            control.label->setText (sculpt::parameterName (id), juce::dontSendNotification);
-            control.label->setJustificationType (juce::Justification::centred);
-            control.label->setColour (juce::Label::textColourId, kText);
-            control.label->setFont (juce::FontOptions (12.0f));
-            addAndMakeVisible (*control.label);
-
-            const auto paramId = bridge::paramIdString (track, id);
-            if (apvts.getParameter (paramId) != nullptr)
-                control.loopSnapAttachment =
-                    std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
-                        apvts, paramId, *control.loopSnapToggle);
         }
         else
         {
@@ -466,7 +446,7 @@ void SculptSamplerAudioProcessorEditor::resized()
 
     modPageViewport_.setVisible (false);
 
-    if (currentPage_ == sculpt::Page::Granular)
+    if (currentPage_ == sculpt::Page::Granular || currentPage_ == sculpt::Page::Material)
     {
         auto strip = knobArea.removeFromTop (22);
         const int btnW = juce::jmin (36, strip.getWidth() / 8);

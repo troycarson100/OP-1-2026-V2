@@ -10,12 +10,25 @@ namespace sculpt
 
 namespace
 {
-    // Long enough to hide a large jump when loop in/out moves past the playhead during playback.
-    constexpr int kWrapBlendSamples = 384; // ~8.7 ms @ 44.1k
-
-    inline float epCos (float u) { return std::cos (0.5f * kPi * u); }
-    inline float epSin (float u) { return std::sin (0.5f * kPi * u); }
+    // Loop-seam crossfade gains. `elapsed` = samples since the wrap; the new loop head fades in
+    // over `attackS` (raised cosine 0->1), the old tail fades out over `releaseS` (1->0). When
+    // attack == release this is an amplitude-constant crossfade.
+    inline void blendGains (int elapsed, int attackS, int releaseS, float& gIn, float& gOut)
+    {
+        const float pin  = std::min (1.0f, static_cast<float> (elapsed) / static_cast<float> (std::max (1, attackS)));
+        const float pout = std::min (1.0f, static_cast<float> (elapsed) / static_cast<float> (std::max (1, releaseS)));
+        gIn  = 0.5f - 0.5f * std::cos (kPi * pin);
+        gOut = 0.5f + 0.5f * std::cos (kPi * pout);
+    }
 } // namespace
+
+void TapePlayer::setLoopFades (float attackSec, float releaseSec)
+{
+    const double sr   = sampleRate_ > 0.0 ? sampleRate_ : 44100.0;
+    const int    maxS = std::max (8, static_cast<int> (0.30 * sr)); // cap ~300 ms
+    attackSamples_  = std::clamp (static_cast<int> (std::lround (static_cast<double> (attackSec)  * sr)), 8, maxS);
+    releaseSamples_ = std::clamp (static_cast<int> (std::lround (static_cast<double> (releaseSec) * sr)), 8, maxS);
+}
 
 void TapePlayer::prepare (double sampleRate)
 {
@@ -143,7 +156,9 @@ bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regio
                 return false;
             }
             wrapBlendFromPos_ = pos;                       // old tail continues from here
-            wrapBlendRemain_  = kWrapBlendSamples;
+            wrapBlendLen_     = std::min (std::max (attackSamples_, releaseSamples_),
+                                          std::max (1, static_cast<int> (regionLen * 0.5)));
+            wrapBlendRemain_  = wrapBlendLen_;
             pos = regionStart + std::fmod (pos - regionEnd, regionLen);
         }
     }
@@ -157,7 +172,9 @@ bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regio
                 return false;
             }
             wrapBlendFromPos_ = pos;
-            wrapBlendRemain_  = kWrapBlendSamples;
+            wrapBlendLen_     = std::min (std::max (attackSamples_, releaseSamples_),
+                                          std::max (1, static_cast<int> (regionLen * 0.5)));
+            wrapBlendRemain_  = wrapBlendLen_;
             pos = regionEnd - std::fmod (regionStart - pos, regionLen);
         }
     }
@@ -235,15 +252,14 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             float       rawR = buffer.getSampleLinear (rightChannel, pos) * level_;
             if (wrapBlendRemain_ > 0)
             {
-                const float u = 1.0f - static_cast<float> (wrapBlendRemain_) / static_cast<float> (kWrapBlendSamples);
-                const float c = epCos (u);
-                const float s = epSin (u);
+                float gIn = 1.0f, gOut = 0.0f;
+                blendGains (wrapBlendLen_ - wrapBlendRemain_, attackSamples_, releaseSamples_, gIn, gOut);
                 const float fromL =
                     buffer.getSampleLinear (0, static_cast<float> (wrapBlendFromPos_)) * level_;
                 const float fromR =
                     buffer.getSampleLinear (rightChannel, static_cast<float> (wrapBlendFromPos_)) * level_;
-                rawL = c * fromL + s * rawL;
-                rawR = c * fromR + s * rawR;
+                rawL = gOut * fromL + gIn * rawL;
+                rawR = gOut * fromR + gIn * rawR;
                 --wrapBlendRemain_;
             }
             if (! scrubLpPrimed_)
@@ -276,15 +292,14 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
         float       rawR = buffer.getSampleLinear (rightChannel, pos) * level_;
         if (wrapBlendRemain_ > 0)
         {
-            const float u = 1.0f - static_cast<float> (wrapBlendRemain_) / static_cast<float> (kWrapBlendSamples);
-            const float c = epCos (u);
-            const float s = epSin (u);
+            float gIn = 1.0f, gOut = 0.0f;
+            blendGains (wrapBlendLen_ - wrapBlendRemain_, attackSamples_, releaseSamples_, gIn, gOut);
             const float fromL =
                 buffer.getSampleLinear (0, static_cast<float> (wrapBlendFromPos_)) * level_;
             const float fromR =
                 buffer.getSampleLinear (rightChannel, static_cast<float> (wrapBlendFromPos_)) * level_;
-            rawL = c * fromL + s * rawL;
-            rawR = c * fromR + s * rawR;
+            rawL = gOut * fromL + gIn * rawL;
+            rawR = gOut * fromR + gIn * rawR;
             wrapBlendFromPos_ += static_cast<double> (speed_); // old tail keeps moving
             --wrapBlendRemain_;
         }

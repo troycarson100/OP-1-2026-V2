@@ -145,6 +145,8 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     tape.setSpeedRatio (speedRatio);
     tape.setLoopRegion (loopLo, loopHi);
     tape.setLevel (1.0f);
+    const float xfadeSec = map::loopFadeSeconds (get (ParameterId::MaterialLoopXfade));
+    tape.setLoopFades (xfadeSec, xfadeSec);
 
     if (materialPlayheadScrub)
         ignoreStoppedPlayheadSeek_ = false;
