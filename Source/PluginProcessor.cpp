@@ -138,7 +138,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
 
                 if (id == ParameterId::FilterScale || id == ParameterId::MaterialPitchScale)
                     addChoiceParam (layout, pid, pname, scaleChoices, id);
-                else if (id == ParameterId::FilterKey)
+                else if (id == ParameterId::FilterKey || id == ParameterId::MaterialPitchKey)
                     addChoiceParam (layout, pid, pname, keyChoices, id);
                 else if (id == ParameterId::FilterMode)
                     addChoiceParam (layout, pid, pname, modeChoices, id);

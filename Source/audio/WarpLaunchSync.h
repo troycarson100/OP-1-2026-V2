@@ -13,7 +13,8 @@ namespace warpLaunchSync
 
 // Same warp speed law as Track::updateParameters: tempo-sync, then transpose by the Pitch
 // knob (semitone transpose, scale-snapped; forward only).
-inline float warpTapeSpeedRatio (float tapeKnobRaw, FilterScale pitchScale, float rootBpm, double hostBpm)
+inline float warpTapeSpeedRatio (float tapeKnobRaw, FilterScale pitchScale, int pitchKey,
+                                 float rootBpm, double hostBpm)
 {
     float root = rootBpm < 1.0e-3f ? 120.0f : rootBpm;
     double hb    = hostBpm;
@@ -22,7 +23,7 @@ inline float warpTapeSpeedRatio (float tapeKnobRaw, FilterScale pitchScale, floa
 
     float sync = static_cast<float> (hb / static_cast<double> (root));
     sync       = std::clamp (sync, 0.1f, 10.0f);
-    return sync * materialPitchRatio (tapeKnobRaw, pitchScale);
+    return sync * materialPitchRatio (tapeKnobRaw, pitchScale, pitchKey);
 }
 
 // Beats (host quarter notes) for one pass through the normalized loop region at current warp speed.

@@ -356,15 +356,19 @@ namespace
             case P::MaterialPitchScale:
                 return sculpt::filterScaleName (sculpt::normalizedToFilterScale (v));
             case P::FilterKey:
+            case P::MaterialPitchKey:
                 return sculpt::filterKeyName (sculpt::normalizedToKeyIndex (v));
             case P::FilterMode:
                 return (v > 0.5f) ? "Ring" : "LP/BP/HP";
             case P::TapeSpeed:
             {
-                // Pitch: semitone transpose, snapped to the Material scale when set (both modes).
+                // Pitch: semitone transpose, snapped to the Material scale/key when set.
                 const auto pitchScale =
                     sculpt::normalizedToFilterScale (screen.selectedTrackMaterialPitchScale01);
-                const int  semis = juce::roundToInt (sculpt::materialPitchSemitones (v, pitchScale));
+                const int  pitchKey =
+                    sculpt::normalizedToKeyIndex (screen.selectedTrackMaterialPitchKey01);
+                const int  semis =
+                    juce::roundToInt (sculpt::materialPitchSemitones (v, pitchScale, pitchKey));
                 return juce::String::formatted ("%+d st", semis);
             }
             case P::MaterialTimeMode:

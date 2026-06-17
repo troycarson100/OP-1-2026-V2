@@ -117,9 +117,11 @@ enum class ParameterId : int
     // When on, Loop Start / Loop End snap to a fixed grid (see map::snapLoopPair01).
     LoopSnapGrid,
 
-    // Material pitch scale lock (FilterScale index). Free = off; otherwise the Tape Speed
-    // knob is remapped to even semitone steps snapped to this scale (tape mode only).
+    // Material pitch scale lock (FilterScale index). Free = off; otherwise the Pitch knob
+    // is remapped to even semitone steps snapped to this scale.
     MaterialPitchScale,
+    // Material scale root / key (pitch class 0=C .. 11=B). Tonic the scale is rooted on.
+    MaterialPitchKey,
 
     Count
 };
@@ -205,6 +207,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::SampleRootBpm:   return 0.4f;    // 120 BPM (40 + 0.4*200)
         case ParameterId::TapeSpeedSnap:   return 0.0f;   // off
         case ParameterId::MaterialPitchScale: return 0.0f; // Free (off)
+        case ParameterId::MaterialPitchKey:   return 0.0f; // C
         case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -522,6 +525,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::SampleRootBpm:   return "Root BPM";
         case ParameterId::TapeSpeedSnap:   return "Snap 1/4";
         case ParameterId::MaterialPitchScale: return "Scale";
+        case ParameterId::MaterialPitchKey:   return "Key";
         case ParameterId::LoopSnapGrid:    return "Loop Snap";
         default:                           return "Unknown";
     }

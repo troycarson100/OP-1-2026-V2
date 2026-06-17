@@ -186,20 +186,26 @@ inline float snapToScaleMidi (float midiNote, int rootMidi, FilterScale s)
 
 // Material "Pitch" knob -> semitone transpose. The normalized knob [0,1] maps linearly to
 // +/- rangeSemis around 0 at center (n=0.5 -> 0 semitones = original pitch). When s != Free
-// the result is snapped to the nearest scale degree; Free is continuous (no snap).
-inline float materialPitchSemitones (float n01, FilterScale s, float rangeSemis = 24.0f)
+// the result is snapped to the nearest degree of scale s rooted on keyPitchClass (0=C..11=B,
+// relative to the sample's recorded pitch); Free is continuous (no snap).
+inline float materialPitchSemitones (float n01, FilterScale s, int keyPitchClass = 0,
+                                     float rangeSemis = 24.0f)
 {
     const float clamped = n01 < 0.0f ? 0.0f : (n01 > 1.0f ? 1.0f : n01);
     float       semis   = (clamped - 0.5f) * 2.0f * rangeSemis;
     if (s != FilterScale::Free)
-        semis = snapToScaleMidi (60.0f + semis, 60, s) - 60.0f;
+    {
+        const int rootMidi = 60 + (((keyPitchClass % 12) + 12) % 12);
+        semis = snapToScaleMidi (60.0f + semis, rootMidi, s) - 60.0f;
+    }
     return semis;
 }
 
 // Playback ratio for the Material Pitch knob (always forward; transport handles stop).
-inline float materialPitchRatio (float n01, FilterScale s, float rangeSemis = 24.0f)
+inline float materialPitchRatio (float n01, FilterScale s, int keyPitchClass = 0,
+                                 float rangeSemis = 24.0f)
 {
-    return std::pow (2.0f, materialPitchSemitones (n01, s, rangeSemis) / 12.0f);
+    return std::pow (2.0f, materialPitchSemitones (n01, s, keyPitchClass, rangeSemis) / 12.0f);
 }
 
 // Snaps a frequency in Hz to the nearest scale note, with rootHz as the tonic.

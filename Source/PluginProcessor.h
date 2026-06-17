@@ -94,6 +94,8 @@ namespace bridge
             case P::SampleRootBpm:   suffix = "sampleRootBpm"; break;
             case P::TapeSpeedSnap: suffix = "tapeSpeedSnap"; break;
             case P::LoopSnapGrid:  suffix = "loopSnapGrid"; break;
+            case P::MaterialPitchScale: suffix = "materialPitchScale"; break;
+            case P::MaterialPitchKey:   suffix = "materialPitchKey"; break;
             default: break;
         }
 

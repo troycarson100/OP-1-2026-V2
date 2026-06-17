@@ -111,9 +111,11 @@ struct ScreenModel
     float selectedTrackMaterialTimeMode01 = 0.0f;
     // Selected track: TapeSpeedSnap (quantized tape speed knob). Not on the 8-slot LCD row.
     float selectedTrackTapeSpeedSnap01 = 0.0f;
-    // Selected track: MaterialPitchScale (FilterScale index, normalized). Drives Tape Speed
-    // LCD readout to show scale-locked semitones (tape mode) when not Free.
+    // Selected track: MaterialPitchScale (FilterScale index, normalized). Drives the Pitch
+    // LCD readout to show scale-locked semitones when not Free.
     float selectedTrackMaterialPitchScale01 = 0.0f;
+    // Selected track: MaterialPitchKey (scale root / key, normalized 0..1 -> pitch class).
+    float selectedTrackMaterialPitchKey01 = 0.0f;
 
     // Selected track tape loop region (normalized, same as tape uses) for Material LCD.
     float materialLoopStart01 = 0.0f;

@@ -29,7 +29,8 @@ namespace
           ParameterId::SampleRootBpm, ParameterId::LoopStart, ParameterId::LoopEnd,
           ParameterId::CaptureArm, ParameterId::MaterialPlayhead,
           ParameterId::LoopSnapGrid, ParameterId::MaterialPitchScale,
-          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
+          ParameterId::MaterialPitchKey,
+          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
         // Granular row unused for slots — use kGranularEncoderPage + granularEncoderPage in parameterForSlot.
         { kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
           kEmpty, kEmpty, kEmpty },

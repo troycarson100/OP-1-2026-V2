@@ -114,7 +114,8 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     // Pitch knob: semitone transpose (+/-24 st, center = 0 st), snapped to the Material scale
     // (Free = continuous, no quantize). Applies in both Tape and Warp modes.
     const FilterScale pitchScale = normalizedToFilterScale (get (ParameterId::MaterialPitchScale));
-    const float       pitchRatio = materialPitchRatio (tapeKnobRaw, pitchScale);
+    const int         pitchKey   = normalizedToKeyIndex (get (ParameterId::MaterialPitchKey));
+    const float       pitchRatio = materialPitchRatio (tapeKnobRaw, pitchScale, pitchKey);
 
     float speedRatio = 0.0f;
     if (get (ParameterId::MaterialTimeMode) > 0.5f)
