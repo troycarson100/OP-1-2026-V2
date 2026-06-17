@@ -64,12 +64,7 @@ namespace
 
     float pickMaterialGridStepSeconds (float spanSec)
     {
-        const float cands[] = { 0.05f, 0.1f,  0.2f,  0.5f,  1.0f,  2.0f,  5.0f,  10.0f,
-                                15.0f, 30.0f, 60.0f, 120.0f, 300.0f, 600.0f, 1800.0f };
-        for (float s : cands)
-            if (spanSec / s <= 7.5f)
-                return s;
-        return cands[14];
+        return sculpt::map::materialGridStepSeconds (spanSec);
     }
 
     void drawMaterialTimeGrid (juce::Graphics& g, juce::Rectangle<float> rect,

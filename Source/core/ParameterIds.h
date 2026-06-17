@@ -260,19 +260,41 @@ namespace map
         return std::round (clamp01 (n) * 4.0f) / 4.0f;
     }
 
-    // Material loop in/out: snap to 1/64 grid in normalized 0..1 (64 steps including endpoints).
-    inline float snapLoopToGrid01 (float n01)
+    // Material time-grid major step (seconds) for a given span. Shared by the waveform grid
+    // overlay and the loop snap so Loop Start/End land on the gridlines the user sees.
+    inline float materialGridStepSeconds (float spanSec)
     {
+        const float cands[] = { 0.05f, 0.1f,  0.2f,  0.5f,  1.0f,  2.0f,  5.0f,  10.0f,
+                                15.0f, 30.0f, 60.0f, 120.0f, 300.0f, 600.0f, 1800.0f };
+        for (float s : cands)
+            if (spanSec / s <= 7.5f)
+                return s;
+        return cands[14];
+    }
+
+    // Material loop in/out snap. With a known buffer duration, snaps to the visible time grid's
+    // minor lines (= major step / 5); otherwise falls back to a 1/64-of-buffer grid.
+    inline float snapLoopToGrid01 (float n01, float durationSec = 0.0f)
+    {
+        if (durationSec > 1.0e-4f)
+        {
+            const float minor = materialGridStepSeconds (durationSec) * 0.2f;
+            const float t     = clamp01 (n01) * durationSec;
+            return clamp01 (std::round (t / minor) * minor / durationSec);
+        }
         constexpr int kSteps = 64;
         return std::round (clamp01 (n01) * static_cast<float> (kSteps)) / static_cast<float> (kSteps);
     }
 
-    inline void snapLoopPair01 (float& loopStart01, float& loopEnd01)
+    inline void snapLoopPair01 (float& loopStart01, float& loopEnd01, float durationSec = 0.0f)
     {
-        loopStart01 = snapLoopToGrid01 (loopStart01);
-        loopEnd01   = snapLoopToGrid01 (loopEnd01);
-        if (loopEnd01 < loopStart01 + 0.01f)
-            loopEnd01 = clampf (loopStart01 + 0.01f, 0.0f, 1.0f);
+        loopStart01 = snapLoopToGrid01 (loopStart01, durationSec);
+        loopEnd01   = snapLoopToGrid01 (loopEnd01, durationSec);
+        float minGap = 0.01f;
+        if (durationSec > 1.0e-4f)
+            minGap = materialGridStepSeconds (durationSec) * 0.2f / durationSec;
+        if (loopEnd01 < loopStart01 + minGap)
+            loopEnd01 = clampf (loopStart01 + minGap, 0.0f, 1.0f);
     }
 
     // Warp varispeed multiplier: snap to 0.25 steps (e.g. 1.0, 1.25, 1.5 …), clamp to curve range.

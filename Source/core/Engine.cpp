@@ -247,9 +247,10 @@ void Engine::executeWarpLaunchForTrack (int trackIndex, double targetHostBeat)
     const double hostBpm = clock_.getBpm();
     float        loopS   = params_.effective (trackIndex, ParameterId::LoopStart);
     float        loopE   = params_.effective (trackIndex, ParameterId::LoopEnd);
-    if (params_.effective (trackIndex, ParameterId::LoopSnapGrid) > 0.5f)
-        map::snapLoopPair01 (loopS, loopE);
     const int    frames  = trk.getMaterial().getBuffer().getNumFrames();
+    const float  durSec  = sampleRate_ > 1.0e-6 ? static_cast<float> (frames / sampleRate_) : 0.0f;
+    if (params_.effective (trackIndex, ParameterId::LoopSnapGrid) > 0.5f)
+        map::snapLoopPair01 (loopS, loopE, durSec);
     float        rootBpm = map::sampleRootBpm (params_.effective (trackIndex, ParameterId::SampleRootBpm));
     if (rootBpm < 1.0e-3f)
         rootBpm = 120.0f;
@@ -265,7 +266,11 @@ void Engine::executeWarpLaunchForTrack (int trackIndex, double targetHostBeat)
         float refLs = params_.effective (ref, ParameterId::LoopStart);
         float refLe = params_.effective (ref, ParameterId::LoopEnd);
         if (params_.effective (ref, ParameterId::LoopSnapGrid) > 0.5f)
-            map::snapLoopPair01 (refLs, refLe);
+        {
+            const int   refFrames = tracks_[rs].getMaterial().getBuffer().getNumFrames();
+            const float refDurSec = sampleRate_ > 1.0e-6 ? static_cast<float> (refFrames / sampleRate_) : 0.0f;
+            map::snapLoopPair01 (refLs, refLe, refDurSec);
+        }
         ph01 = warpLaunchSync::materialPlayheadForRefPhase (
             tracks_[rs].getTapePositionNormalized(),
             refLs, refLe,
@@ -623,7 +628,11 @@ void Engine::updateScreenModel()
     float lsDisp = params_.effective (selected, ParameterId::LoopStart);
     float leDisp = params_.effective (selected, ParameterId::LoopEnd);
     if (params_.effective (selected, ParameterId::LoopSnapGrid) > 0.5f)
-        map::snapLoopPair01 (lsDisp, leDisp);
+    {
+        const float dispDurSec = (prepared_ && sampleRate_ > 1.0e-6 && matBuf.getNumFrames() > 0)
+                                     ? static_cast<float> (matBuf.getNumFrames() / sampleRate_) : 0.0f;
+        map::snapLoopPair01 (lsDisp, leDisp, dispDurSec);
+    }
     screen_.materialLoopStart01 = lsDisp;
     screen_.materialLoopEnd01   = leDisp;
 

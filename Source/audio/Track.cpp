@@ -140,7 +140,11 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     float loopLo = get (ParameterId::LoopStart);
     float loopHi = get (ParameterId::LoopEnd);
     if (get (ParameterId::LoopSnapGrid) > 0.5f)
-        map::snapLoopPair01 (loopLo, loopHi);
+    {
+        const int   snapFrames = material_.getBuffer().getNumFrames();
+        const float durSec     = engineSampleRate > 1.0e-6 ? static_cast<float> (snapFrames / engineSampleRate) : 0.0f;
+        map::snapLoopPair01 (loopLo, loopHi, durSec);
+    }
 
     tape.setSpeedRatio (speedRatio);
     tape.setLoopRegion (loopLo, loopHi);
