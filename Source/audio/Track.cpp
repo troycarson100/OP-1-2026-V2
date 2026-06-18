@@ -115,7 +115,8 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     // (Free = continuous, no quantize). Applies in both Tape and Warp modes.
     const FilterScale pitchScale = normalizedToFilterScale (get (ParameterId::MaterialPitchScale));
     const int         pitchKey   = normalizedToKeyIndex (get (ParameterId::MaterialPitchKey));
-    const float       pitchRatio = materialPitchRatio (tapeKnobRaw, pitchScale, pitchKey);
+    const float       materialSemis = materialPitchSemitones (tapeKnobRaw, pitchScale, pitchKey);
+    const float       pitchRatio    = std::pow (2.0f, materialSemis / 12.0f);
 
     float speedRatio = 0.0f;
     if (get (ParameterId::MaterialTimeMode) > 0.5f)
@@ -180,6 +181,14 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     gp.pulses     = map::grainPulses (get (ParameterId::GrainPulses), gp.steps);
     gp.rotate     = map::grainRotate (get (ParameterId::GrainRotate), gp.steps);
     gp.pitchQuantIndex = grainPitchQuantScaleIndex (get (ParameterId::GrainPitchQuant));
+    // Share the Material page's scale + key so grains stay in tune with the tape layer.
+    gp.pitchScale = pitchScale;
+    gp.pitchKey   = pitchKey;
+    // Grains ride the Material page transpose so the whole track pitches together.
+    gp.materialSemis = materialSemis;
+    // Playhead follow: grains can track the moving tape position (GrainFollow).
+    gp.playhead01 = getTapePositionNormalized();
+    gp.follow     = get (ParameterId::GrainFollow);
     gp.loopStart01        = loopLo;
     gp.loopEnd01          = loopHi;
     gp.grainPattern       = get (ParameterId::GrainPattern);

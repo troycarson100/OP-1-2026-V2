@@ -59,6 +59,7 @@ target_sources(SculptSampler PRIVATE
     Source/audio/SampleBuffer.cpp
     Source/audio/SampleRecorder.cpp
     Source/audio/TapePlayer.cpp
+    Source/audio/TapeGrainScrub.cpp
     Source/audio/GranularEngine.cpp
     Source/audio/GrainVoice.cpp
     Source/audio/GrainPool.cpp

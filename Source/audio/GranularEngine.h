@@ -5,6 +5,7 @@
 #include <limits>
 
 #include "GrainPool.h"
+#include "../core/FilterScales.h"
 #include "../util/GrainPatternTypes.h"
 #include "../util/Random.h"
 
@@ -43,9 +44,24 @@ public:
         int   steps           = 8;
         int   pulses          = 4;
         int   rotate          = 0;
-        int   pitchQuantIndex = 0; // from GrainPitchQuant
+        int   pitchQuantIndex = 0; // from GrainPitchQuant (fallback when scale below is Free)
         float loopStart01     = 0.0f;
         float loopEnd01       = 1.0f;
+
+        // Grain pitch quantization shared with the Material page (so layers stay in tune). When
+        // pitchScale != Free, grains snap to this scale rooted on pitchKey; otherwise the legacy
+        // GrainPitchQuant fallback applies.
+        FilterScale pitchScale = FilterScale::Free;
+        int         pitchKey   = 0; // tonic pitch class 0=C..11=B
+
+        // Material page "Pitch" transpose in semitones. Added to each grain AFTER its own scale snap
+        // so the granular layer rides the Material transpose locked to the tape (whole track moves
+        // together in tune). The Grain Pitch knob remains a relative offset on top of this.
+        float       materialSemis = 0.0f;
+
+        // Playhead follow (GrainFollow): blend the spawn position toward the moving tape playhead.
+        float playhead01 = 0.0f; // current tape read position, normalized over the whole buffer
+        float follow     = 0.0f; // 0 = static GrainPosition knob, 1 = fully track the playhead
 
         float grainPattern        = 0.0f; // normalized → map::grainPatternIndex
         float grainPatternAmount  = 0.0f; // 0 = bypass choreography

@@ -27,9 +27,10 @@ namespace
         { ParameterId::GrainPosition, ParameterId::GrainSize, ParameterId::GrainDensity,
           ParameterId::GrainPitch, ParameterId::GrainSpray, ParameterId::GrainContour,
           ParameterId::GrainSpread, ParameterId::GrainMix },
-        // Page 2: rhythm + pitch + choreography; RandRev fills the formerly empty 8th slot
+        // Page 2: rhythm + pitch + choreography. Follow (playhead tracking) takes the slot the
+        // now-superseded Pitch Quant held — grain pitch follows the Material scale/key directly.
         { ParameterId::GrainSync, ParameterId::GrainSteps, ParameterId::GrainPulses,
-          ParameterId::GrainRotate, ParameterId::GrainPitchQuant, ParameterId::GrainPattern,
+          ParameterId::GrainRotate, ParameterId::GrainFollow, ParameterId::GrainPattern,
           ParameterId::GrainPatternAmount, ParameterId::GrainRandRev },
     };
 

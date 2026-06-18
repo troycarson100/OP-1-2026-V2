@@ -46,6 +46,7 @@ namespace bridge
             case P::GrainTexture:    suffix = "grainTexture"; break;
             case P::GrainSpread:     suffix = "grainSpread"; break;
             case P::GrainMix:        suffix = "grainMix"; break;
+            case P::GrainFollow:     suffix = "grainFollow"; break;
             case P::GrainSync:       suffix = "grainSync"; break;
             case P::GrainSteps:      suffix = "grainSteps"; break;
             case P::GrainPulses:     suffix = "grainPulses"; break;

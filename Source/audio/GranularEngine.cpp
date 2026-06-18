@@ -131,7 +131,24 @@ void GranularEngine::spawnOneGrain (const SampleBuffer& buffer, int startOffsetI
     const float le    = loopB * (frames - 1.0f);
     const float loopLenFrames = std::max (1.0f, le - ls);
 
-    float posNorm = clamp01 (params_.position);
+    // Base spawn position. With GrainFollow, blend the knob toward the moving tape playhead so the
+    // cloud tracks the material loop's rhythm (S-4-style); in synced mode the playhead is converted
+    // to loop-relative space. The pattern choreography offset (posOff) is then layered on top.
+    float basePos = clamp01 (params_.position);
+    if (params_.follow > 1.0e-5f)
+    {
+        float ph;
+        if (params_.syncedMode)
+        {
+            const float span = std::max (1.0e-6f, loopB - loopA);
+            ph = clamp01 ((clamp01 (params_.playhead01) - loopA) / span);
+        }
+        else
+            ph = clamp01 (params_.playhead01);
+        basePos = lerp (basePos, ph, clamp01 (params_.follow));
+    }
+
+    float posNorm = basePos;
     {
         float w = posNorm + posOff;
         w       = w - std::floor (w);
@@ -148,8 +165,19 @@ void GranularEngine::spawnOneGrain (const SampleBuffer& buffer, int startOffsetI
         else
         {
             const int steps = std::clamp (params_.steps, 1, 16);
-            const int si    = static_cast<int> (rng_.nextUInt () % static_cast<uint32_t> (steps));
-            startFrame      = ls + (static_cast<float> (si) + 0.5f) / static_cast<float> (steps) * loopLenFrames;
+            int       si;
+            if (params_.follow > 1.0e-5f)
+            {
+                // Following: scatter on the step grid AROUND the followed position (window = Spray),
+                // so grains stay near the playhead instead of jumping across the whole loop.
+                const int center = std::clamp (static_cast<int> (std::floor (posNorm * static_cast<float> (steps))), 0, steps - 1);
+                const int range  = std::max (1, static_cast<int> (std::lround (params_.spray * static_cast<float> (steps))));
+                const int off    = static_cast<int> (rng_.nextUInt () % static_cast<uint32_t> (2 * range + 1)) - range;
+                si = std::clamp (center + off, 0, steps - 1);
+            }
+            else
+                si = static_cast<int> (rng_.nextUInt () % static_cast<uint32_t> (steps));
+            startFrame = ls + (static_cast<float> (si) + 0.5f) / static_cast<float> (steps) * loopLenFrames;
         }
     }
     else
@@ -166,8 +194,18 @@ void GranularEngine::spawnOneGrain (const SampleBuffer& buffer, int startOffsetI
     }
 
     float semis = (params_.pitch - 0.5f) * 12.0f + static_cast<float> (pitchAdd);
-    if (params_.pitchQuantIndex > 0)
+    // Quantize to the Material page's scale + key so the granular layer stays in tune with the
+    // tape. Falls back to the standalone GrainPitchQuant scale only when Material scale is Free.
+    if (params_.pitchScale != FilterScale::Free)
+    {
+        const int rootMidi = 60 + (((params_.pitchKey % 12) + 12) % 12);
+        semis = snapToScaleMidi (60.0f + semis, rootMidi, params_.pitchScale) - 60.0f;
+    }
+    else if (params_.pitchQuantIndex > 0)
         semis = quantizeGrainPitchSemitones (semis, params_.pitchQuantIndex);
+
+    // Ride the Material page transpose, applied after the snap so grains move locked to the tape.
+    semis += params_.materialSemis;
 
     float increment = semitonesToRatio (semis)
                       * (1.0f + params_.texture * 0.04f * rng_.nextBipolar ());
@@ -439,7 +477,10 @@ void GranularEngine::getGrainFocusWindow01 (float totalFrames, float& outStart01
     }
 
     const float tf         = totalFrames;
-    const float startFrame = params_.position * (tf - 1.0f);
+    float       basePos    = clamp01 (params_.position);
+    if (params_.follow > 1.0e-5f) // overlay box tracks the playhead when following
+        basePos = lerp (basePos, clamp01 (params_.playhead01), clamp01 (params_.follow));
+    const float startFrame = basePos * (tf - 1.0f);
     const float sizeSec    = map::grainSizeSeconds (params_.size);
     const float lenFrames  = sizeSec * static_cast<float> (sampleRate_);
 

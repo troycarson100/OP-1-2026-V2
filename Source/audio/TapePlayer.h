@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../util/SmoothedValue.h"
+#include "TapeGrainScrub.h"
 
 namespace sculpt
 {
@@ -83,9 +84,18 @@ private:
     // times; boundary re-trigger jumps override them with a longer equal crossfade (granular wash).
     int    blendFadeIn_    = 384;
     int    blendFadeOut_   = 384;
-    // Samples until the next boundary re-trigger jump is allowed (rate limit). The crossfade spans
-    // this whole interval so consecutive jumps blend continuously instead of clicking.
-    int    boundaryJumpCooldown_ = 0;
+
+    // Boundary-drag granular scrub: when Loop Start (forward) / Loop End (reverse) is dragged onto
+    // the read head, the head tracks the moving boundary via overlap-add grains at constant pitch
+    // instead of jumping (no seam click) or reading the sweep directly (no pitch scrub). scrubMix_
+    // crossfades the dry single stream against the grain cloud at engage/disengage edges; the hold
+    // counter detects the drag stopping so the cloud hands cleanly back to dry playback.
+    TapeGrainScrub scrub_;
+    SmoothedValue  scrubMix_;          // 0 = dry single stream, 1 = grain cloud
+    bool           scrubEngaged_ = false;
+    float          lastRegionStart_ = -1.0e9f; // prev-sample boundary positions (frames), to detect
+    float          lastRegionEnd_   = -1.0e9f; // motion of either boundary; sentinel primes "still"
+    int            boundaryStillFrames_ = 0;
 };
 
 } // namespace sculpt

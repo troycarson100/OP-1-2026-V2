@@ -130,6 +130,11 @@ enum class ParameterId : int
     // Grid divisions for loop snap + waveform overlay (map::materialGridDivisions -> 1/1..1/32).
     MaterialGridDivision,
 
+    // Granular: 0 = grain position is the static GrainPosition knob; 1 = grains follow the moving
+    // tape playhead (S-4-style), so the cloud tracks the material loop's rhythm. GrainPosition acts
+    // as an offset when following. Placed at the enum end to avoid renumbering existing parameters.
+    GrainFollow,
+
     Count
 };
 
@@ -217,6 +222,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialPitchKey:   return 0.0f; // C
         case ParameterId::MaterialLoopXfade:   return 0.18f; // ~10 ms
         case ParameterId::MaterialGridDivision: return 0.8f;  // 1/16 (index 4 of 0..5)
+        case ParameterId::GrainFollow:     return 0.0f;   // static position (legacy behavior)
         case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -518,6 +524,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::GrainTexture:    return "Grain Texture";
         case ParameterId::GrainSpread:     return "Grain Spread";
         case ParameterId::GrainMix:        return "Grain Mix";
+        case ParameterId::GrainFollow:     return "Grain Follow";
         case ParameterId::GrainSync:       return "Grain Sync";
         case ParameterId::GrainSteps:      return "Grain Steps";
         case ParameterId::GrainPulses:     return "Grain Pulses";

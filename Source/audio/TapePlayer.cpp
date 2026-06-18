@@ -20,6 +20,10 @@ namespace
         gIn  = 0.5f - 0.5f * std::cos (kPi * pin);
         gOut = 0.5f + 0.5f * std::cos (kPi * pout);
     }
+
+    // Upper bound for the "boundary still" frame counter (saturates here; only compared against the
+    // disengage hold time, so it just needs to exceed it).
+    constexpr int kBoundaryHoldFramesMax = 1 << 20;
 } // namespace
 
 void TapePlayer::setLoopFades (float attackSec, float releaseSec)
@@ -38,6 +42,9 @@ void TapePlayer::prepare (double sampleRate)
     loopEndSm_.prepare (sampleRate_, 0.012f);
     loopStartSm_.snap (loopStartTarget_);
     loopEndSm_.snap (loopEndTarget_);
+    scrub_.prepare (sampleRate_);
+    scrubMix_.prepare (sampleRate_, 0.025f); // ~25 ms engage/disengage crossfade (matches cloud build-up)
+    scrubMix_.snap (0.0f);
     reset();
 }
 
@@ -54,7 +61,12 @@ void TapePlayer::reset()
     scrubOutLp2R_       = 0.0f;
     scrubLpPrimed_      = false;
     wrapBlendRemain_    = 0;
-    boundaryJumpCooldown_ = 0;
+    scrub_.reset();
+    scrubMix_.snap (0.0f);
+    scrubEngaged_        = false;
+    lastRegionStart_     = -1.0e9f; // sentinel: first block primed as "boundaries still"
+    lastRegionEnd_       = -1.0e9f;
+    boundaryStillFrames_ = 0;
     loopStartSm_.snap (loopStartTarget_);
     loopEndSm_.snap (loopEndTarget_);
 }
@@ -82,33 +94,42 @@ void TapePlayer::setFollowScrubTarget (bool shouldFollow) noexcept
 
 void TapePlayer::setLoopRegion (float start01, float end01)
 {
+    constexpr float kMinLoop01 = 0.01f;
     loopStartTarget_ = clamp01 (start01);
     loopEndTarget_   = clamp01 (end01);
-    if (loopEndTarget_ < loopStartTarget_ + 0.01f)
-        loopEndTarget_ = clampf (loopStartTarget_ + 0.01f, 0.0f, 1.0f);
-
-    // During playback snap loop start to the knob immediately (no creep), so a boundary re-trigger
-    // jump lands exactly where the knob is and the read head settles cleanly between jumps. Loop end
-    // stays smoothed for its wrap seam; snap it too if the start would otherwise overtake it.
-    if (playing_ && ! followScrubTarget_)
+    // Guarantee a minimum loop length, adjusting BOTH bounds. The old code only clamped the end UP,
+    // which collapsed to zero when Loop Start was modulated to the very top of the sample (end can't
+    // exceed 1.0, so start==1.0 left start==end). A zero-length region makes regionLen < 2 every
+    // sample, so process() skips the tape output entirely -> silent dropout until a re-seek. When
+    // there's no room for the gap below 1.0, push the start down instead.
+    if (loopEndTarget_ - loopStartTarget_ < kMinLoop01)
     {
-        loopStartSm_.snap (loopStartTarget_);
-        if (loopEndSm_.getCurrent() < loopStartTarget_)
-            loopEndSm_.snap (loopEndTarget_);
+        if (loopStartTarget_ + kMinLoop01 <= 1.0f)
+            loopEndTarget_ = loopStartTarget_ + kMinLoop01;
         else
-            loopEndSm_.setTarget (loopEndTarget_);
+        {
+            loopEndTarget_   = 1.0f;
+            loopStartTarget_ = 1.0f - kMinLoop01;
+        }
     }
-    else
-    {
-        loopStartSm_.setTarget (loopStartTarget_);
-        loopEndSm_.setTarget (loopEndTarget_);
-    }
+
+    // Smooth BOTH boundaries at the same rate. Because they share a coefficient and the targets keep
+    // end >= start + kMinLoop01, the smoothed currents can never cross — so the loop length stays
+    // positive even when a tiny loop window is swept quickly. (The old code snapped the start while the
+    // end lagged, which let a small swept window momentarily collapse the region -> crackle/dropouts.
+    // The start-snap only existed to land the now-removed re-trigger jump exactly on the knob.)
+    loopStartSm_.setTarget (loopStartTarget_);
+    loopEndSm_.setTarget (loopEndTarget_);
 }
 
 float TapePlayer::getPositionNormalized (int numFrames) const
 {
     if (numFrames <= 1)
         return 0.0f;
+    // While the grain cloud is tracking a dragged boundary, the dry read head lags behind; report
+    // the boundary instead so the visible playhead stays glued to Loop Start/End.
+    if (scrubEngaged_)
+        return speed_ >= 0.0f ? loopStartSm_.getCurrent() : loopEndSm_.getCurrent();
     const double pos = (followScrubTarget_ && playing_) ? scrubTarget_ : position_;
     return static_cast<float> (pos / static_cast<double> (numFrames));
 }
@@ -242,7 +263,7 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
         const double regionEnd   = static_cast<double> (le) * last;
         const double regionLen   = regionEnd - regionStart;
         if (regionLen < 2.0)
-            return;
+            continue; // degenerate region for this sample only — don't silence the whole block
 
         // External playhead scrub: slew the read head toward scrubTarget_ with a low-pass so manual
         // scrubbing sounds smooth. Loop-boundary follow is handled separately below (as a jump).
@@ -310,43 +331,87 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             scrubLpPrimed_ = false;
         }
 
-        // Loop boundary dragged onto the read head from the trailing side (Loop Start moved ahead of
-        // the read while playing forward, or Loop End moved behind it in reverse). Jump the read head
-        // straight onto the boundary with a crossfade — an instant re-trigger at normal pitch, no
-        // scan, no lag. Rate-limited: the crossfade spans the whole cooldown interval, so a fast
-        // continuous drag re-triggers back-to-back and the grains blend into a smooth wash, while a
-        // single knob move still jumps immediately (cooldown is 0 when idle).
-        if (boundaryJumpCooldown_ > 0)
-            --boundaryJumpCooldown_;
+        // A loop boundary swept onto the read head (Loop Start up onto it, or Loop End down onto it;
+        // mirrored in reverse), or a small loop window swept by automation. Either case is tracked by
+        // an overlap-add grain cloud (constant pitch, no seam click) crossfaded against the dry
+        // stream, instead of the single-stream wrap which clicks when a boundary moves across it.
+        const float rsF = static_cast<float> (regionStart);
+        const float reF = static_cast<float> (regionEnd);
+        const bool  primed = lastRegionStart_ > -1.0e8f;
 
-        if (boundaryJumpCooldown_ == 0)
+        // Either boundary moving counts as "the loop is being swept" (gates engage + settle timer).
+        const bool startMovedUp = primed && rsF > lastRegionStart_ + 0.5f;
+        const bool endMovedDown = primed && reF < lastRegionEnd_   - 0.5f;
+        const bool moved        = primed && (std::fabs (rsF - lastRegionStart_) > 0.5f
+                                          || std::fabs (reF - lastRegionEnd_)   > 0.5f);
+        if (! primed)
+            boundaryStillFrames_ = kBoundaryHoldFramesMax; // first block: treat as already still
+        else if (moved)
+            boundaryStillFrames_ = 0;
+        else if (boundaryStillFrames_ < kBoundaryHoldFramesMax)
+            ++boundaryStillFrames_;
+        lastRegionStart_ = rsF;
+        lastRegionEnd_   = reF;
+
+        const double deadband  = 2.0;
+        const double smallLoop = sampleRate_ * 0.120; // loops shorter than ~120 ms render granular when swept
+        const bool   smallRegion  = regionLen < smallLoop;
+        const bool   headBelowStart = position_ < regionStart - deadband;
+        const bool   headAboveEnd   = position_ > regionEnd   + deadband;
+        // Overtake = a boundary moved *toward* the head and now sits past it (distinct from a normal
+        // wrap, where the boundary did not move onto the head).
+        const bool   overtake = (headBelowStart && startMovedUp) || (headAboveEnd && endMovedDown);
+        const double boundary = (speed_ >= 0.0f) ? regionStart : regionEnd;
+        const int    holdFrames = std::max (8, static_cast<int> (sampleRate_ * 0.060)); // 60 ms still
+
+        const int grainLen = std::min (scrub_.defaultSpawnLength(),
+                                       std::max (16, static_cast<int> (regionLen)));
+
+        if (! scrubEngaged_)
         {
-            bool   doJump = false;
-            double dest   = position_;
-            if (speed_ >= 0.0f)
+            // Engage only while a boundary is actively sweeping (not static), and when it has either
+            // overtaken the head or the loop is small enough that single-stream looping would crackle.
+            // Static and normal-size loops with the head inside never smear.
+            if (boundaryStillFrames_ == 0 && (overtake || smallRegion))
             {
-                if (position_ < regionStart) { dest = regionStart; doJump = true; }
+                scrub_.setSpawnLength (grainLen); // small loop -> loop tone; larger -> scrub smear
+                scrubEngaged_ = true;
+                scrub_.engage();
+                scrubMix_.setTarget (1.0f);
             }
-            else if (position_ > regionEnd)
+        }
+        else
+        {
+            scrub_.setSpawnLength (grainLen); // keep grains matched to the evolving loop length
+            if (boundaryStillFrames_ >= holdFrames)
             {
-                dest = std::max (regionStart, regionEnd - 1.0e-4); doJump = true;
-            }
-
-            if (doJump && std::fabs (dest - position_) >= 2.0)
-            {
-                const int interval = std::max (8, static_cast<int> (sampleRate_ * 0.045)); // ~45 ms
-                wrapBlendFromPos_     = position_;   // old grain keeps moving + fades out
-                wrapBlendLen_         = interval;
-                blendFadeIn_          = interval;    // equal-power crossfade across the whole grain
-                blendFadeOut_         = interval;
-                wrapBlendRemain_      = interval;
-                position_             = dest;
-                boundaryJumpCooldown_ = interval;    // next re-trigger only after this grain ends
+                // Boundary settled — hand back to the dry single stream. Always glide the dry head
+                // onto the boundary (where the cloud's newest grains are) through the seam blend, so
+                // the cloud->dry crossfade is correlated (no dip) and the position jump has no pop —
+                // the dry stream is only ~90% ducked here, so an instant snap would click. Disengaging
+                // only once the boundary settles (never mid-sweep) avoids the flip-flop.
+                wrapBlendFromPos_ = position_;
+                wrapBlendLen_     = std::max (attackSamples_, releaseSamples_);
+                blendFadeIn_      = attackSamples_;
+                blendFadeOut_     = releaseSamples_;
+                wrapBlendRemain_  = wrapBlendLen_;
+                position_         = boundary;
+                scrubEngaged_     = false;
+                scrub_.disengage();
+                scrubMix_.setTarget (0.0f);
             }
         }
 
-        if (! wrapReadPosition (position_, regionStart, regionEnd, regionLen))
-            return;
+        // While the grain cloud is engaged it is the audio source, so FREEZE the dry single stream:
+        // don't advance or wrap it. A swept tiny loop would otherwise wrap with a few-sample crossfade
+        // hundreds of times a second, and those clicks leak through the (never-quite-100%) duck as
+        // crackle. The dry stream only needs to exist for the engage/disengage crossfades; disengage
+        // snaps it back onto the boundary, so freezing here is safe.
+        if (! scrubEngaged_)
+        {
+            if (! wrapReadPosition (position_, regionStart, regionEnd, regionLen))
+                return;
+        }
 
         const float pos = static_cast<float> (position_);
         float       rawL = buffer.getSampleLinear (0, pos) * level_;
@@ -364,10 +429,16 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             wrapBlendFromPos_ += static_cast<double> (speed_); // old tail keeps moving
             --wrapBlendRemain_;
         }
-        outL[i] += rawL;
-        outR[i] += rawR;
 
-        position_ += static_cast<double> (speed_);
+        // Crossfade dry single stream against the boundary-tracking grain cloud.
+        float grainL = 0.0f, grainR = 0.0f;
+        scrub_.render (buffer, boundary, static_cast<double> (speed_), level_, rightChannel, grainL, grainR);
+        const float mix = scrubMix_.next();
+        outL[i] += rawL * (1.0f - mix) + grainL * mix;
+        outR[i] += rawR * (1.0f - mix) + grainR * mix;
+
+        if (! scrubEngaged_)
+            position_ += static_cast<double> (speed_);
     }
 }
 
