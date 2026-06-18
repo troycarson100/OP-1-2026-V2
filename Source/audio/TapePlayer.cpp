@@ -54,6 +54,7 @@ void TapePlayer::reset()
     scrubOutLp2R_       = 0.0f;
     scrubLpPrimed_      = false;
     wrapBlendRemain_    = 0;
+    boundaryJumpCooldown_ = 0;
     loopStartSm_.snap (loopStartTarget_);
     loopEndSm_.snap (loopEndTarget_);
 }
@@ -85,8 +86,23 @@ void TapePlayer::setLoopRegion (float start01, float end01)
     loopEndTarget_   = clamp01 (end01);
     if (loopEndTarget_ < loopStartTarget_ + 0.01f)
         loopEndTarget_ = clampf (loopStartTarget_ + 0.01f, 0.0f, 1.0f);
-    loopStartSm_.setTarget (loopStartTarget_);
-    loopEndSm_.setTarget (loopEndTarget_);
+
+    // During playback snap loop start to the knob immediately (no creep), so a boundary re-trigger
+    // jump lands exactly where the knob is and the read head settles cleanly between jumps. Loop end
+    // stays smoothed for its wrap seam; snap it too if the start would otherwise overtake it.
+    if (playing_ && ! followScrubTarget_)
+    {
+        loopStartSm_.snap (loopStartTarget_);
+        if (loopEndSm_.getCurrent() < loopStartTarget_)
+            loopEndSm_.snap (loopEndTarget_);
+        else
+            loopEndSm_.setTarget (loopEndTarget_);
+    }
+    else
+    {
+        loopStartSm_.setTarget (loopStartTarget_);
+        loopEndSm_.setTarget (loopEndTarget_);
+    }
 }
 
 float TapePlayer::getPositionNormalized (int numFrames) const
@@ -137,48 +153,6 @@ void TapePlayer::seekNormalized (float position01, int numFrames, float loopStar
     loopEndSm_.snap (loopEndTarget_);
 }
 
-bool TapePlayer::pullPlayheadToTrailingBoundary (double& pos, double regionStart, double regionEnd,
-                                               double targetStart, double targetEnd) noexcept
-{
-    // A trailing loop boundary has swept past the playhead. We must NOT track the smoothed
-    // boundary as it creeps forward — gluing the read head to a fast-moving boundary scans the
-    // sample at many times playback speed (the "laser"). Instead: jump the read once to the
-    // boundary's TARGET (final) position, freeze that smoother to its target so the region stops
-    // sweeping, and crossfade from the old read position. Continuous dragging then becomes a few
-    // discrete, crossfaded jumps rather than a continuous pitched scan.
-
-    auto snapAndBlend = [this] (double& p, double dest) noexcept
-    {
-        if (wrapBlendRemain_ <= 0)
-        {
-            wrapBlendFromPos_ = p;
-            wrapBlendLen_     = std::max (attackSamples_, releaseSamples_);
-            wrapBlendRemain_  = wrapBlendLen_;
-        }
-        p = dest;
-    };
-
-    if (speed_ >= 0.0f)
-    {
-        if (pos < regionStart)
-        {
-            snapAndBlend (pos, targetStart);
-            loopStartSm_.snap (loopStartTarget_); // stop the boundary sweep that caused the scan
-            return true;
-        }
-    }
-    else
-    {
-        if (pos >= regionEnd)
-        {
-            snapAndBlend (pos, std::max (targetStart, targetEnd - 1.0e-4));
-            loopEndSm_.snap (loopEndTarget_);
-            return true;
-        }
-    }
-    return false;
-}
-
 bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regionEnd,
                                    double regionLen) noexcept
 {
@@ -201,6 +175,8 @@ bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regio
             wrapBlendLen_     = std::min (std::max (attackSamples_, releaseSamples_),
                                           std::max (1, static_cast<int> (regionLen * 0.5)));
             wrapBlendRemain_  = wrapBlendLen_;
+            blendFadeIn_      = attackSamples_;
+            blendFadeOut_     = releaseSamples_;
             pos = regionStart + std::fmod (pos - regionEnd, regionLen);
         }
     }
@@ -217,6 +193,8 @@ bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regio
             wrapBlendLen_     = std::min (std::max (attackSamples_, releaseSamples_),
                                           std::max (1, static_cast<int> (regionLen * 0.5)));
             wrapBlendRemain_  = wrapBlendLen_;
+            blendFadeIn_      = attackSamples_;
+            blendFadeOut_     = releaseSamples_;
             pos = regionEnd - std::fmod (regionStart - pos, regionLen);
         }
     }
@@ -232,15 +210,11 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
     const int rightChannel = buffer.getNumChannels() > 1 ? 1 : 0;
 
     const bool follow = followScrubTarget_ && playing_;
-    const double slewCoeff = follow
-                                 ? (1.0 - std::exp (-1.0 / (sampleRate_ * 0.0029)))
-                                 : 0.0;
-    const float scrubLpA = follow
-                               ? static_cast<float> (1.0 - std::exp (-2.0 * 3.14159265358979323846 * 720.0 / sampleRate_))
-                               : 0.0f;
-    const float scrubLpB = follow
-                               ? static_cast<float> (1.0 - std::exp (-2.0 * 3.14159265358979323846 * 480.0 / sampleRate_))
-                               : 0.0f;
+    // Slew + low-pass coefficients for the smoothed "scrub" chase. Used both for an external
+    // playhead scrub (follow) and when a loop boundary is dragged onto the read head — see loop.
+    const double slewCoeff = 1.0 - std::exp (-1.0 / (sampleRate_ * 0.0029));
+    const float  scrubLpA  = static_cast<float> (1.0 - std::exp (-2.0 * 3.14159265358979323846 * 720.0 / sampleRate_));
+    const float  scrubLpB  = static_cast<float> (1.0 - std::exp (-2.0 * 3.14159265358979323846 * 480.0 / sampleRate_));
 
     if (follow && smoothInit_)
     {
@@ -254,9 +228,6 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             const double pullThresh = std::max (320.0, sampleRate_ * 0.0035);
             if (std::fabs (errBlock) > pullThresh)
                 smoothRead_ += errBlock * 0.28;
-            pullPlayheadToTrailingBoundary (smoothRead_, regionStart0, regionEnd0,
-                                            static_cast<double> (loopStartTarget_) * last,
-                                            static_cast<double> (loopEndTarget_) * last);
             if (! wrapReadPosition (smoothRead_, regionStart0, regionEnd0, regionLen0))
                 return;
         }
@@ -273,6 +244,8 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
         if (regionLen < 2.0)
             return;
 
+        // External playhead scrub: slew the read head toward scrubTarget_ with a low-pass so manual
+        // scrubbing sounds smooth. Loop-boundary follow is handled separately below (as a jump).
         if (follow)
         {
             if (! smoothInit_)
@@ -290,9 +263,6 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             else if (step < -cap)
                 step = -cap;
             double next = prev + step;
-            pullPlayheadToTrailingBoundary (next, regionStart, regionEnd,
-                                            static_cast<double> (loopStartTarget_) * last,
-                                            static_cast<double> (loopEndTarget_) * last);
             if (! wrapReadPosition (next, regionStart, regionEnd, regionLen))
                 return;
             const float pos = static_cast<float> (0.5 * (prev + next));
@@ -301,7 +271,7 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             if (wrapBlendRemain_ > 0)
             {
                 float gIn = 1.0f, gOut = 0.0f;
-                blendGains (wrapBlendLen_ - wrapBlendRemain_, attackSamples_, releaseSamples_, gIn, gOut);
+                blendGains (wrapBlendLen_ - wrapBlendRemain_, blendFadeIn_, blendFadeOut_, gIn, gOut);
                 const float fromL =
                     buffer.getSampleLinear (0, static_cast<float> (wrapBlendFromPos_)) * level_;
                 const float fromR =
@@ -333,9 +303,48 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             continue;
         }
 
-        pullPlayheadToTrailingBoundary (position_, regionStart, regionEnd,
-                                        static_cast<double> (loopStartTarget_) * last,
-                                        static_cast<double> (loopEndTarget_) * last);
+        // Manual scrub just ended — drop its state so it re-primes cleanly next time.
+        if (smoothInit_)
+        {
+            smoothInit_    = false;
+            scrubLpPrimed_ = false;
+        }
+
+        // Loop boundary dragged onto the read head from the trailing side (Loop Start moved ahead of
+        // the read while playing forward, or Loop End moved behind it in reverse). Jump the read head
+        // straight onto the boundary with a crossfade — an instant re-trigger at normal pitch, no
+        // scan, no lag. Rate-limited: the crossfade spans the whole cooldown interval, so a fast
+        // continuous drag re-triggers back-to-back and the grains blend into a smooth wash, while a
+        // single knob move still jumps immediately (cooldown is 0 when idle).
+        if (boundaryJumpCooldown_ > 0)
+            --boundaryJumpCooldown_;
+
+        if (boundaryJumpCooldown_ == 0)
+        {
+            bool   doJump = false;
+            double dest   = position_;
+            if (speed_ >= 0.0f)
+            {
+                if (position_ < regionStart) { dest = regionStart; doJump = true; }
+            }
+            else if (position_ > regionEnd)
+            {
+                dest = std::max (regionStart, regionEnd - 1.0e-4); doJump = true;
+            }
+
+            if (doJump && std::fabs (dest - position_) >= 2.0)
+            {
+                const int interval = std::max (8, static_cast<int> (sampleRate_ * 0.045)); // ~45 ms
+                wrapBlendFromPos_     = position_;   // old grain keeps moving + fades out
+                wrapBlendLen_         = interval;
+                blendFadeIn_          = interval;    // equal-power crossfade across the whole grain
+                blendFadeOut_         = interval;
+                wrapBlendRemain_      = interval;
+                position_             = dest;
+                boundaryJumpCooldown_ = interval;    // next re-trigger only after this grain ends
+            }
+        }
+
         if (! wrapReadPosition (position_, regionStart, regionEnd, regionLen))
             return;
 
@@ -345,7 +354,7 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
         if (wrapBlendRemain_ > 0)
         {
             float gIn = 1.0f, gOut = 0.0f;
-            blendGains (wrapBlendLen_ - wrapBlendRemain_, attackSamples_, releaseSamples_, gIn, gOut);
+            blendGains (wrapBlendLen_ - wrapBlendRemain_, blendFadeIn_, blendFadeOut_, gIn, gOut);
             const float fromL =
                 buffer.getSampleLinear (0, static_cast<float> (wrapBlendFromPos_)) * level_;
             const float fromR =

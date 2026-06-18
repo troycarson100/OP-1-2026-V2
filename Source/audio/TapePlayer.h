@@ -45,11 +45,6 @@ public:
     void process (const SampleBuffer& buffer, float* outL, float* outR, int numSamples);
 
 private:
-    // Loop boundary dragged over the playhead from the trailing side: clamp to that edge
-    // (forward → pull to start; reverse → pull to end). Distinct from leading-edge wrap.
-    bool pullPlayheadToTrailingBoundary (double& pos, double regionStart, double regionEnd,
-                                         double targetStart, double targetEnd) noexcept;
-
     bool wrapReadPosition (double& pos, double regionStart, double regionEnd, double regionLen) noexcept;
 
     double position_  = 0.0;   // in frames
@@ -84,6 +79,13 @@ private:
     int    attackSamples_  = 384;
     int    releaseSamples_ = 384;
     int    wrapBlendLen_   = 384;
+    // Fade-in / fade-out lengths of the currently active blend. Loop-seam wraps use the user fade
+    // times; boundary re-trigger jumps override them with a longer equal crossfade (granular wash).
+    int    blendFadeIn_    = 384;
+    int    blendFadeOut_   = 384;
+    // Samples until the next boundary re-trigger jump is allowed (rate limit). The crossfade spans
+    // this whole interval so consecutive jumps blend continuously instead of clicking.
+    int    boundaryJumpCooldown_ = 0;
 };
 
 } // namespace sculpt
