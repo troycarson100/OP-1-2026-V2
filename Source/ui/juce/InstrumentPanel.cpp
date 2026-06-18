@@ -247,12 +247,19 @@ namespace
         }
     }
 
+    // Full-sample overview: always shows the whole buffer (ignores Wave Zoom). Bins inside the loop
+    // zone draw at full brightness; everything outside the loop is dimmed so the loop region reads
+    // as a bright window against the rest of the sample.
     void drawSecondaryStrip (juce::Graphics& g, juce::Rectangle<float> rect,
-                             const std::array<float, sculpt::kMaterialWaveformBins>& peaks)
+                             const std::array<float, sculpt::kMaterialWaveformBins>& peaks,
+                             float loopStart01, float loopEnd01, float play01)
     {
         constexpr int n = sculpt::kMaterialWaveformBins;
         g.setColour (kLcdWaveformBg);
         g.fillRect (rect);
+
+        const float lo = juce::jlimit (0.0f, 1.0f, std::min (loopStart01, loopEnd01));
+        const float hi = juce::jlimit (0.0f, 1.0f, std::max (loopStart01, loopEnd01));
 
         const float h = rect.getHeight();
         const float baseY = rect.getBottom();
@@ -263,9 +270,26 @@ namespace
             const float pk = juce::jlimit (0.0f, 1.0f, peaks[static_cast<size_t> (i)]);
             const float barH = juce::jmax (1.0f, pk * h * 0.85f);
             juce::Rectangle<float> bar (x0 + 0.5f, baseY - barH, juce::jmax (1.0f, x1 - x0 - 1.0f), barH);
-            g.setColour (kWaveformFill.withAlpha (0.45f + 0.35f * pk));
+
+            const float center01 = (static_cast<float> (i) + 0.5f) / static_cast<float> (n);
+            const bool  inLoop    = center01 >= lo && center01 <= hi;
+            const float alpha     = inLoop ? (0.45f + 0.35f * pk) : (0.12f + 0.10f * pk);
+            g.setColour (kWaveformFill.withAlpha (alpha));
             g.fillRect (bar);
         }
+
+        // Loop boundary edges.
+        g.setColour (kWaveformStroke.withAlpha (0.55f));
+        for (float edge : { lo, hi })
+        {
+            const float ex = rect.getX() + edge * rect.getWidth();
+            g.drawVerticalLine (juce::roundToInt (ex), rect.getY(), rect.getBottom());
+        }
+
+        // True full-sample playhead (the top waveform's playhead follows the zoomed view instead).
+        g.setColour (kWaveformPlayhead.withAlpha (0.85f));
+        const float px = rect.getX() + juce::jlimit (0.0f, 1.0f, play01) * rect.getWidth();
+        g.drawVerticalLine (juce::roundToInt (px), rect.getY(), rect.getBottom());
     }
 
     void drawPlayhead (juce::Graphics& g, juce::Rectangle<float> rect, float pos01)
@@ -891,9 +915,25 @@ void InstrumentPanel::setWaveformEnvelope (const float* data, int numBins)
         waveformPeaks_[static_cast<size_t> (i)] = 0.0f;
 }
 
+void InstrumentPanel::setOverviewEnvelope (const float* data, int numBins)
+{
+    if (data == nullptr || numBins <= 0)
+    {
+        overviewPeaks_.fill (0.0f);
+        return;
+    }
+
+    const int nCopy = juce::jmin (numBins, sculpt::kMaterialWaveformBins);
+    for (int i = 0; i < nCopy; ++i)
+        overviewPeaks_[static_cast<size_t> (i)] = data[i];
+    for (int i = nCopy; i < sculpt::kMaterialWaveformBins; ++i)
+        overviewPeaks_[static_cast<size_t> (i)] = 0.0f;
+}
+
 void InstrumentPanel::clearWaveformEnvelope()
 {
     waveformPeaks_.fill (0.0f);
+    overviewPeaks_.fill (0.0f);
 }
 
 juce::Rectangle<int> InstrumentPanel::bpmInteractionBounds() const
@@ -1040,13 +1080,16 @@ void InstrumentPanel::paint (juce::Graphics& g)
         if (granularPage)
             drawGrainOverlay (g, wfArea, screen);
 
-        auto strip = area.removeFromTop (stripH).toFloat().reduced (1.0f, 1.0f);
-        drawSecondaryStrip (g, strip, waveformPeaks_);
+        const int   st        = juce::jlimit (0, sculpt::kNumTracks - 1, screen.selectedTrack);
+        const float fullPlay01 = juce::jlimit (0.0f, 1.0f, screen.tapePosition[static_cast<size_t> (st)]);
 
-        const juce::Rectangle<float> playRect (wfArea.getX(), wfArea.getY(), wfArea.getWidth(),
-                                               wfArea.getHeight() + strip.getHeight());
-        const int st = juce::jlimit (0, sculpt::kNumTracks - 1, screen.selectedTrack);
-        float play01 = screen.tapePosition[static_cast<size_t> (st)];
+        auto strip = area.removeFromTop (stripH).toFloat().reduced (1.0f, 1.0f);
+        drawSecondaryStrip (g, strip, overviewPeaks_,
+                            screen.materialLoopStart01, screen.materialLoopEnd01, fullPlay01);
+
+        // Top waveform playhead lives only over the (possibly zoomed) main area; the strip draws its
+        // own full-sample playhead. Remap into the zoomed view window for the Material page.
+        float play01 = fullPlay01;
         if (materialPage)
         {
             const float v0   = screen.materialViewStart01;
@@ -1055,7 +1098,7 @@ void InstrumentPanel::paint (juce::Graphics& g)
             play01             = (play01 - v0) / span;
             play01             = juce::jlimit (0.0f, 1.0f, play01);
         }
-        drawPlayhead (g, playRect, play01);
+        drawPlayhead (g, wfArea, play01);
     }
     else if (mixerLcd)
     {

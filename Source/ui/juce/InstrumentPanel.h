@@ -25,6 +25,8 @@ public:
     void setUiPage (sculpt::Page page) { uiPage_ = page; }
 
     void setWaveformEnvelope (const float* data, int numBins);
+    // Full-sample (un-zoomed) envelope for the secondary overview strip, independent of Wave Zoom.
+    void setOverviewEnvelope (const float* data, int numBins);
     void clearWaveformEnvelope();
 
     void paint (juce::Graphics& g) override;
@@ -42,6 +44,8 @@ private:
     BpmDragHandler   bpmDragHandler_;
     sculpt::Page     uiPage_ = sculpt::Page::Granular;
     std::array<float, sculpt::kMaterialWaveformBins> waveformPeaks_{};
+    // Full-sample peaks for the secondary strip; never windowed by Wave Zoom.
+    std::array<float, sculpt::kMaterialWaveformBins> overviewPeaks_{};
 
     bool   bpmDragging_   = false;
     float  bpmDragStartX_ = 0.0f;

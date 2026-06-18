@@ -353,6 +353,11 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
         const bool materialZoom = (currentPage_ == sculpt::Page::Material);
         engine.fillMaterialWaveformEnvelope (track, sculpt::kMaterialWaveformBins, env.data (), materialZoom);
         instrumentPanel_.setWaveformEnvelope (env.data(), sculpt::kMaterialWaveformBins);
+
+        // Secondary strip is a full-sample overview: always un-zoomed regardless of Wave Zoom.
+        std::array<float, sculpt::kMaterialWaveformBins> overview {};
+        engine.fillMaterialWaveformEnvelope (track, sculpt::kMaterialWaveformBins, overview.data (), false);
+        instrumentPanel_.setOverviewEnvelope (overview.data(), sculpt::kMaterialWaveformBins);
     }
     else
     {
