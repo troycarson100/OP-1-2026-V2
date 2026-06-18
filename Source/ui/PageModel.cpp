@@ -14,9 +14,9 @@ namespace
         { ParameterId::MaterialLevel, ParameterId::LoopStart, ParameterId::LoopEnd,
           ParameterId::MaterialPlayhead, ParameterId::TapeSpeed, ParameterId::MaterialPitchScale,
           ParameterId::MaterialPitchKey, ParameterId::MaterialLoopXfade },
-        // Page 2: Grid Snap, Time Mode, Root BPM, Capture Arm, Wave Zoom
-        { ParameterId::LoopSnapGrid, ParameterId::MaterialTimeMode, ParameterId::SampleRootBpm,
-          ParameterId::CaptureArm, ParameterId::MaterialWaveZoom, ParameterId::Count,
+        // Page 2: Grid Snap, Grid Div, Time Mode, Root BPM, Capture Arm, Wave Zoom
+        { ParameterId::LoopSnapGrid, ParameterId::MaterialGridDivision, ParameterId::MaterialTimeMode,
+          ParameterId::SampleRootBpm, ParameterId::CaptureArm, ParameterId::MaterialWaveZoom,
           ParameterId::Count, ParameterId::Count },
     };
 

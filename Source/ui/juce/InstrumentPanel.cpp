@@ -62,11 +62,8 @@ namespace
         return juce::String (m) + ":" + juce::String (s, 1);
     }
 
-    float pickMaterialGridStepSeconds (float spanSec)
-    {
-        return sculpt::map::materialGridStepSeconds (spanSec);
-    }
-
+    // Tempo grid: lines at each 1/N note (materialGridStepSec) across the visible window, so the
+    // loop-snap points are visible; label the times when the divisions are sparse enough to read.
     void drawMaterialTimeGrid (juce::Graphics& g, juce::Rectangle<float> rect,
                                const sculpt::ScreenModel& screen)
     {
@@ -79,24 +76,12 @@ namespace
         const float t0   = dur * v0;
         const float t1   = dur * v1;
         const float span = juce::jmax (1.0e-4f, t1 - t0);
-        const float step = pickMaterialGridStepSeconds (span);
+        const float step = screen.materialGridStepSec; // seconds per 1/N note
+        if (step < 1.0e-5f || span / step > 512.0f)    // guard against absurdly dense grids
+            return;
 
         constexpr float labelBandH = 11.0f;
         auto            plot       = rect.withTrimmedBottom (labelBandH);
-
-        g.setColour (kText.withAlpha (0.14f));
-        const float minorStep = step * 0.2f;
-        if (span / minorStep < 48.0f)
-        {
-            for (float t = std::ceil (t0 / minorStep) * minorStep; t <= t1 + 1.0e-4f; t += minorStep)
-            {
-                const float nx = (t - t0) / span;
-                const float x  = rect.getX() + nx * rect.getWidth();
-                if (x < rect.getX() - 1.0f || x > rect.getRight() + 1.0f)
-                    continue;
-                g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
-            }
-        }
 
         g.setColour (kText.withAlpha (0.22f));
         for (float t = std::ceil (t0 / step) * step; t <= t1 + 1.0e-4f; t += step)
@@ -108,17 +93,20 @@ namespace
             g.drawVerticalLine (juce::roundToInt (x), plot.getY(), plot.getBottom());
         }
 
-        g.setColour (kText.withAlpha (0.48f));
-        g.setFont (juce::FontOptions (8.0f));
-        for (float t = std::ceil (t0 / step) * step; t <= t1 + 1.0e-4f; t += step)
+        if (span / step <= 8.5f)
         {
-            const float nx = (t - t0) / span;
-            const float x  = rect.getX() + nx * rect.getWidth();
-            if (x < rect.getX() - 2.0f || x > rect.getRight() - 2.0f)
-                continue;
-            const juce::String txt = formatMaterialTimeLabel (t);
-            g.drawText (txt, juce::Rectangle<float> (x - 14.0f, plot.getBottom() - 1.0f, 28.0f, labelBandH),
-                        juce::Justification::centred, true);
+            g.setColour (kText.withAlpha (0.48f));
+            g.setFont (juce::FontOptions (8.0f));
+            for (float t = std::ceil (t0 / step) * step; t <= t1 + 1.0e-4f; t += step)
+            {
+                const float nx = (t - t0) / span;
+                const float x  = rect.getX() + nx * rect.getWidth();
+                if (x < rect.getX() - 2.0f || x > rect.getRight() - 2.0f)
+                    continue;
+                const juce::String txt = formatMaterialTimeLabel (t);
+                g.drawText (txt, juce::Rectangle<float> (x - 14.0f, plot.getBottom() - 1.0f, 28.0f, labelBandH),
+                            juce::Justification::centred, true);
+            }
         }
     }
 
@@ -399,6 +387,8 @@ namespace
                 return sculpt::filterKeyName (sculpt::normalizedToKeyIndex (v));
             case P::MaterialLoopXfade:
                 return juce::String (juce::roundToInt (sculpt::map::loopFadeSeconds (v) * 1000.0f)) + " ms";
+            case P::MaterialGridDivision:
+                return "1/" + juce::String (sculpt::map::materialGridDivisions (v));
             case P::FilterMode:
                 return (v > 0.5f) ? "Ring" : "LP/BP/HP";
             case P::TapeSpeed:

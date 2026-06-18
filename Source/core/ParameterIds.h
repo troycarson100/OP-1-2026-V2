@@ -127,6 +127,9 @@ enum class ParameterId : int
     // and new loop head fade out/in over this time, overlapping at the wrap to blend the seam.
     MaterialLoopXfade,
 
+    // Grid divisions for loop snap + waveform overlay (map::materialGridDivisions -> 1/1..1/32).
+    MaterialGridDivision,
+
     Count
 };
 
@@ -213,6 +216,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialPitchScale: return 0.0f; // Free (off)
         case ParameterId::MaterialPitchKey:   return 0.0f; // C
         case ParameterId::MaterialLoopXfade:   return 0.18f; // ~10 ms
+        case ParameterId::MaterialGridDivision: return 0.8f;  // 1/16 (index 4 of 0..5)
         case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -260,41 +264,48 @@ namespace map
         return std::round (clamp01 (n) * 4.0f) / 4.0f;
     }
 
-    // Material time-grid major step (seconds) for a given span. Shared by the waveform grid
-    // overlay and the loop snap so Loop Start/End land on the gridlines the user sees.
-    inline float materialGridStepSeconds (float spanSec)
+    // Material grid note value: knob index 0..5 -> 1/1, 1/2, 1/4, 1/8, 1/16, 1/32 (N = 1,2,4,8,16,32).
+    inline int materialGridDivisions (float n01)
     {
-        const float cands[] = { 0.05f, 0.1f,  0.2f,  0.5f,  1.0f,  2.0f,  5.0f,  10.0f,
-                                15.0f, 30.0f, 60.0f, 120.0f, 300.0f, 600.0f, 1800.0f };
-        for (float s : cands)
-            if (spanSec / s <= 7.5f)
-                return s;
-        return cands[14];
+        const int idx = std::clamp (static_cast<int> (std::lround (clamp01 (n01) * 5.0f)), 0, 5);
+        return 1 << idx;
     }
 
-    // Material loop in/out snap. With a known buffer duration, snaps to the visible time grid's
-    // minor lines (= major step / 5); otherwise falls back to a 1/64-of-buffer grid.
-    inline float snapLoopToGrid01 (float n01, float durationSec = 0.0f)
+    // Seconds spanned by one 1/N note at the sample tempo (1/4 = one beat = 60/bpm s).
+    inline float materialGridDivisionSeconds (int divisions, float bpm)
     {
-        if (durationSec > 1.0e-4f)
+        const int   N = divisions > 0 ? divisions : 16;
+        const float b = bpm > 1.0e-3f ? bpm : 120.0f;
+        return 240.0f / (static_cast<float> (N) * b); // (4/N) beats * (60/bpm)
+    }
+
+    // Normalized grid step (fraction of buffer) for a 1/N note at the given tempo over durationSec.
+    inline float materialGridStep01 (int divisions, float bpm, float durationSec)
+    {
+        if (durationSec < 1.0e-4f)
+            return 1.0f;
+        return clampf (materialGridDivisionSeconds (divisions, bpm) / durationSec, 1.0e-4f, 1.0f);
+    }
+
+    // Material loop in/out snap to the tempo grid: nearest multiple of step01 across the buffer.
+    inline float snapLoopToGrid01 (float n01, float step01)
+    {
+        if (step01 <= 1.0e-5f)
+            return clamp01 (n01);
+        return clamp01 (std::round (clamp01 (n01) / step01) * step01);
+    }
+
+    inline void snapLoopPair01 (float& loopStart01, float& loopEnd01, float step01)
+    {
+        loopStart01 = snapLoopToGrid01 (loopStart01, step01);
+        loopEnd01   = snapLoopToGrid01 (loopEnd01, step01);
+        const float gap = step01 > 1.0e-5f ? step01 : 0.01f; // keep at least one division
+        if (loopEnd01 <= loopStart01)
         {
-            const float minor = materialGridStepSeconds (durationSec) * 0.2f;
-            const float t     = clamp01 (n01) * durationSec;
-            return clamp01 (std::round (t / minor) * minor / durationSec);
+            loopEnd01 = clampf (loopStart01 + gap, 0.0f, 1.0f);
+            if (loopEnd01 <= loopStart01)
+                loopStart01 = clampf (loopEnd01 - gap, 0.0f, 1.0f);
         }
-        constexpr int kSteps = 64;
-        return std::round (clamp01 (n01) * static_cast<float> (kSteps)) / static_cast<float> (kSteps);
-    }
-
-    inline void snapLoopPair01 (float& loopStart01, float& loopEnd01, float durationSec = 0.0f)
-    {
-        loopStart01 = snapLoopToGrid01 (loopStart01, durationSec);
-        loopEnd01   = snapLoopToGrid01 (loopEnd01, durationSec);
-        float minGap = 0.01f;
-        if (durationSec > 1.0e-4f)
-            minGap = materialGridStepSeconds (durationSec) * 0.2f / durationSec;
-        if (loopEnd01 < loopStart01 + minGap)
-            loopEnd01 = clampf (loopStart01 + minGap, 0.0f, 1.0f);
     }
 
     // Warp varispeed multiplier: snap to 0.25 steps (e.g. 1.0, 1.25, 1.5 …), clamp to curve range.
@@ -557,6 +568,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MaterialPitchScale: return "Scale";
         case ParameterId::MaterialPitchKey:   return "Key";
         case ParameterId::MaterialLoopXfade:   return "Cross Fade";
+        case ParameterId::MaterialGridDivision: return "Grid Div";
         case ParameterId::LoopSnapGrid:    return "Loop Snap";
         default:                           return "Unknown";
     }

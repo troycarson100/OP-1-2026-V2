@@ -97,6 +97,7 @@ namespace bridge
             case P::MaterialPitchScale: suffix = "materialPitchScale"; break;
             case P::MaterialPitchKey:   suffix = "materialPitchKey"; break;
             case P::MaterialLoopXfade:   suffix = "materialLoopXfade"; break;
+            case P::MaterialGridDivision: suffix = "materialGridDivision"; break;
             default: break;
         }
 

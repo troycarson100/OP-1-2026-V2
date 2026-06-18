@@ -109,6 +109,16 @@ float Engine::materialWaveCenter01 (int trackIndex) const
     return trk.getTapePositionNormalized();
 }
 
+float Engine::gridStep01ForTrack (int trackIndex) const
+{
+    const int ti = trackIndex < 0 ? 0 : (trackIndex >= kNumTracks ? kNumTracks - 1 : trackIndex);
+    const int   N   = map::materialGridDivisions (params_.effective (ti, ParameterId::MaterialGridDivision));
+    const float bpm = map::sampleRootBpm (params_.effective (ti, ParameterId::SampleRootBpm));
+    const int   frames = tracks_[static_cast<size_t> (ti)].getMaterial().getBuffer().getNumFrames();
+    const float dur = sampleRate_ > 1.0e-6 ? static_cast<float> (frames / sampleRate_) : 0.0f;
+    return map::materialGridStep01 (N, bpm, dur);
+}
+
 // ---- Parameters ------------------------------------------------------------
 
 int Engine::getSelectedTrack() const
@@ -248,9 +258,8 @@ void Engine::executeWarpLaunchForTrack (int trackIndex, double targetHostBeat)
     float        loopS   = params_.effective (trackIndex, ParameterId::LoopStart);
     float        loopE   = params_.effective (trackIndex, ParameterId::LoopEnd);
     const int    frames  = trk.getMaterial().getBuffer().getNumFrames();
-    const float  durSec  = sampleRate_ > 1.0e-6 ? static_cast<float> (frames / sampleRate_) : 0.0f;
     if (params_.effective (trackIndex, ParameterId::LoopSnapGrid) > 0.5f)
-        map::snapLoopPair01 (loopS, loopE, durSec);
+        map::snapLoopPair01 (loopS, loopE, gridStep01ForTrack (trackIndex));
     float        rootBpm = map::sampleRootBpm (params_.effective (trackIndex, ParameterId::SampleRootBpm));
     if (rootBpm < 1.0e-3f)
         rootBpm = 120.0f;
@@ -266,11 +275,7 @@ void Engine::executeWarpLaunchForTrack (int trackIndex, double targetHostBeat)
         float refLs = params_.effective (ref, ParameterId::LoopStart);
         float refLe = params_.effective (ref, ParameterId::LoopEnd);
         if (params_.effective (ref, ParameterId::LoopSnapGrid) > 0.5f)
-        {
-            const int   refFrames = tracks_[rs].getMaterial().getBuffer().getNumFrames();
-            const float refDurSec = sampleRate_ > 1.0e-6 ? static_cast<float> (refFrames / sampleRate_) : 0.0f;
-            map::snapLoopPair01 (refLs, refLe, refDurSec);
-        }
+            map::snapLoopPair01 (refLs, refLe, gridStep01ForTrack (ref));
         ph01 = warpLaunchSync::materialPlayheadForRefPhase (
             tracks_[rs].getTapePositionNormalized(),
             refLs, refLe,
@@ -628,11 +633,7 @@ void Engine::updateScreenModel()
     float lsDisp = params_.effective (selected, ParameterId::LoopStart);
     float leDisp = params_.effective (selected, ParameterId::LoopEnd);
     if (params_.effective (selected, ParameterId::LoopSnapGrid) > 0.5f)
-    {
-        const float dispDurSec = (prepared_ && sampleRate_ > 1.0e-6 && matBuf.getNumFrames() > 0)
-                                     ? static_cast<float> (matBuf.getNumFrames() / sampleRate_) : 0.0f;
-        map::snapLoopPair01 (lsDisp, leDisp, dispDurSec);
-    }
+        map::snapLoopPair01 (lsDisp, leDisp, gridStep01ForTrack (selected));
     screen_.materialLoopStart01 = lsDisp;
     screen_.materialLoopEnd01   = leDisp;
 
@@ -648,6 +649,9 @@ void Engine::updateScreenModel()
         const float frac     = (durSec > 1.0e-6f) ? std::min (xfadeSec / durSec, loopW * 0.5f) : 0.0f;
         screen_.materialLoopFadeIn01  = frac;
         screen_.materialLoopFadeOut01 = frac;
+        screen_.materialGridStepSec = map::materialGridDivisionSeconds (
+            map::materialGridDivisions (params_.effective (selected, ParameterId::MaterialGridDivision)),
+            map::sampleRootBpm (params_.effective (selected, ParameterId::SampleRootBpm)));
     }
 
     const int matFrames = matBuf.getNumFrames();

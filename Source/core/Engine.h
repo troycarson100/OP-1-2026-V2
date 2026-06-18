@@ -96,6 +96,8 @@ public:
 
 private:
     float materialWaveCenter01 (int trackIndex) const;
+    // Normalized loop-snap grid step for a track (tempo note value / buffer duration).
+    float gridStep01ForTrack (int trackIndex) const;
 
     void applyPendingRequests();
     void fireWarpLaunchDeadlines (double beatAtBlockStart);

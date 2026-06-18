@@ -123,6 +123,8 @@ struct ScreenModel
     // Loop crossfade lengths as a fraction of the full buffer, for the Material fade overlay.
     float materialLoopFadeIn01  = 0.0f; // attack, at loop start
     float materialLoopFadeOut01 = 0.0f; // release, at loop end
+    // Material grid spacing in seconds (one 1/N note at the sample tempo) for the grid overlay.
+    float materialGridStepSec = 0.0f;
 
     // Material waveform: total length (seconds) and horizontal view window across the buffer.
     float materialDurationSec = 0.0f;

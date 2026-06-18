@@ -141,9 +141,11 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     float loopHi = get (ParameterId::LoopEnd);
     if (get (ParameterId::LoopSnapGrid) > 0.5f)
     {
-        const int   snapFrames = material_.getBuffer().getNumFrames();
-        const float durSec     = engineSampleRate > 1.0e-6 ? static_cast<float> (snapFrames / engineSampleRate) : 0.0f;
-        map::snapLoopPair01 (loopLo, loopHi, durSec);
+        const int   gridN   = map::materialGridDivisions (get (ParameterId::MaterialGridDivision));
+        const float gridBpm = map::sampleRootBpm (get (ParameterId::SampleRootBpm));
+        const int   gFrames = material_.getBuffer().getNumFrames();
+        const float gDurSec = engineSampleRate > 1.0e-6 ? static_cast<float> (gFrames / engineSampleRate) : 0.0f;
+        map::snapLoopPair01 (loopLo, loopHi, map::materialGridStep01 (gridN, gridBpm, gDurSec));
     }
 
     tape.setSpeedRatio (speedRatio);
