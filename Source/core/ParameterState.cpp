@@ -68,13 +68,46 @@ void ParameterState::addModOffset (int track, ParameterId id, float offset)
     modOffset_[static_cast<size_t> (track)][static_cast<size_t> (id)] += offset;
 }
 
+void ParameterState::setStepOverride (int track, ParameterId id, float value)
+{
+    if (track < 0 || track >= kNumTracks)
+        return;
+    const auto t = static_cast<size_t> (track);
+    const auto i = static_cast<size_t> (id);
+    stepOverride_[t][i]       = clamp01 (value);
+    stepOverrideActive_[t][i] = true;
+}
+
+void ParameterState::clearStepOverride (int track, ParameterId id)
+{
+    if (track < 0 || track >= kNumTracks)
+        return;
+    stepOverrideActive_[static_cast<size_t> (track)][static_cast<size_t> (id)] = false;
+}
+
+void ParameterState::clearStepOverrides (int track)
+{
+    if (track < 0 || track >= kNumTracks)
+        return;
+    stepOverrideActive_[static_cast<size_t> (track)].fill (false);
+}
+
+bool ParameterState::hasStepOverride (int track, ParameterId id) const
+{
+    if (track < 0 || track >= kNumTracks)
+        return false;
+    return stepOverrideActive_[static_cast<size_t> (track)][static_cast<size_t> (id)];
+}
+
 float ParameterState::effective (int track, ParameterId id) const
 {
     if (track < 0 || track >= kNumTracks)
         return 0.0f;
     const auto t = static_cast<size_t> (track);
     const auto i = static_cast<size_t> (id);
-    return clamp01 (track_[t][i] + modOffset_[t][i]);
+    // Step lock (if active) replaces the base value; modulation still adds on top.
+    const float base = stepOverrideActive_[t][i] ? stepOverride_[t][i] : track_[t][i];
+    return clamp01 (base + modOffset_[t][i]);
 }
 
 float ParameterState::effectiveGlobal (ParameterId id) const

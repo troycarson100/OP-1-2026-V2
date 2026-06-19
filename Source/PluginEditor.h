@@ -63,6 +63,18 @@ private:
     void toggleStepPage();
     void toggleSelectedMachine();
 
+    // P-lock editing (latched, works with one mouse): arm P-LOCK, click a step to target it; the
+    // page knobs then detach from the live params and edit THAT step's locks directly (turn = set
+    // the lock, no effect on the live value). Un-arm to rebind the knobs to the live params.
+    juce::TextButton plockButton_ { "P-LOCK" };
+    bool   plockMode_ = false;
+    int    plockStep_ = -1;   // targeted step for lock editing
+    void   enterLockEdit();   // detach page knobs and load the targeted step's lock values
+
+    // During playback the page knobs follow the selected track's effective (post-lock) values so
+    // locks are visible jumping per step. True while that follow is active (resync to base on stop).
+    bool   knobsFollowing_ = false;
+
     // Pages (device row + MIX)
     std::array<juce::TextButton, static_cast<size_t> (sculpt::Page::Count)> pageButtons_;
     // Granular only: switch between encoder bank 1 (core sound) and 2 (rhythm + pitch + pattern).
@@ -72,6 +84,7 @@ private:
     // Page parameter controls (rebuilt on track/page change)
     struct PageControl
     {
+        sculpt::ParameterId id = sculpt::ParameterId::Count; // which parameter this control edits
         std::unique_ptr<juce::Slider> slider;
         std::unique_ptr<juce::Label>  label;
         std::unique_ptr<juce::ToggleButton> tapeSnapToggle; // Material page + Tape Speed only

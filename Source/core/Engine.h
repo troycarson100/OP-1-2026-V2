@@ -43,6 +43,8 @@ public:
 
     void  setTrackParameter (int trackIndex, ParameterId id, float normalizedValue);
     float getTrackParameter (int trackIndex, ParameterId id) const;
+    // Effective value (base or active step-lock, plus modulation) — for UI to show locks during playback.
+    float getEffectiveTrackParameter (int trackIndex, ParameterId id) const;
 
     // Performance actions. Thread-safe: requests are latched and applied at
     // the start of the next audio block.
@@ -78,6 +80,14 @@ public:
     bool getStepTrig (int track, int step) const;
     int  getCurrentPatternIndex() const { return patternMgr_.getCurrentIndex(); }
     void setCurrentPatternIndex (int idx);
+
+    // Per-step parameter locks (message / UI thread). paramId is a track ParameterId.
+    void setStepLock (int track, int step, ParameterId id, float value);
+    void clearStepLock (int track, int step, ParameterId id);
+    void clearStepLocks (int track, int step);
+    bool stepHasLock (int track, int step, ParameterId id) const;
+    bool getStepLock (int track, int step, ParameterId id, float& out) const;
+    int  stepLockCount (int track, int step) const;
 
     // Direct capture entry point (audio thread only).
     void captureToTrack (int trackIndex, const float** inputs, int numChannels, int numSamples);

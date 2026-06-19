@@ -13,6 +13,8 @@ constexpr int    kNumPages             = 7;
 constexpr int    kNumSteps             = 32;
 constexpr int    kStepsPerPage         = 16;
 constexpr int    kNumSeqPatterns       = 16;   // pattern bank size
+// Max distinct parameter locks per step (sparse storage; keeps a pattern at tens of KB).
+constexpr int    kMaxLocksPerStep      = 16;
 
 // Encoder slots on device pages (Material..Mixer) used for mod mapping grid.
 constexpr int    kMaxModMappingEncoders  = 8;

@@ -157,6 +157,12 @@ float Engine::getTrackParameter (int trackIndex, ParameterId id) const
                                  : params_.getGlobal (id);
 }
 
+float Engine::getEffectiveTrackParameter (int trackIndex, ParameterId id) const
+{
+    // Includes the active step-lock override + modulation: what the track actually uses this block.
+    return params_.effective (trackIndex, id);
+}
+
 // ---- Performance actions (latched, thread-safe) -----------------------------
 
 void Engine::triggerTrack (int trackIndex)
@@ -396,8 +402,11 @@ void Engine::applyPendingRequests()
     if (startSeq)
     {
         stepSeq_.start();
-        for (auto& tr : tracks_)
-            tr.resetSliceCursor(); // predictable slice order from step 0
+        for (int t = 0; t < kNumTracks; ++t)
+        {
+            tracks_[static_cast<size_t> (t)].resetSliceCursor(); // predictable slice order from step 0
+            params_.clearStepOverrides (t);                       // start clean; trigs latch locks
+        }
     }
 
     if (masterCmd == 1)
@@ -409,6 +418,8 @@ void Engine::applyPendingRequests()
     if (stopSeq)
     {
         stepSeq_.stop();
+        for (int t = 0; t < kNumTracks; ++t)
+            params_.clearStepOverrides (t); // revert to live knob values when not sequencing
         if (masterCmd == 2)
             for (auto& tr : tracks_)
                 tr.stop();
@@ -427,6 +438,33 @@ void Engine::toggleStepTrig (int track, int step) { patternMgr_.current().toggle
 void Engine::setStepTrig (int track, int step, bool on) { patternMgr_.current().setTrig (track, step, on); }
 bool Engine::getStepTrig (int track, int step) const { return patternMgr_.current().hasTrig (track, step); }
 void Engine::setCurrentPatternIndex (int idx) { patternMgr_.setCurrentIndex (idx); }
+
+void Engine::setStepLock (int track, int step, ParameterId id, float value)
+{
+    if (isTrackParameter (id))
+        patternMgr_.current().setLock (track, step, static_cast<int> (id), value);
+}
+void Engine::clearStepLock (int track, int step, ParameterId id)
+{
+    patternMgr_.current().clearLock (track, step, static_cast<int> (id));
+}
+void Engine::clearStepLocks (int track, int step)
+{
+    if (auto* s = patternMgr_.current().step (track, step))
+        s->clearLocks();
+}
+bool Engine::stepHasLock (int track, int step, ParameterId id) const
+{
+    return patternMgr_.current().hasLock (track, step, static_cast<int> (id));
+}
+bool Engine::getStepLock (int track, int step, ParameterId id, float& out) const
+{
+    return patternMgr_.current().getLock (track, step, static_cast<int> (id), out);
+}
+int Engine::stepLockCount (int track, int step) const
+{
+    return patternMgr_.current().lockCount (track, step);
+}
 
 // Fire trigs for any step boundaries crossed this chunk, on Sampler-machine tracks only.
 void Engine::advanceStepSequencer (double samplesPerBeat, int numSamples)
@@ -450,7 +488,19 @@ void Engine::advanceStepSequencer (double samplesPerBeat, int numSamples)
             // Sequencer drives only Sampler-machine tracks; Torso tracks free-run independently.
             if (params_.effective (t, ParameterId::MaterialMachine) <= 0.5f)
                 continue;
-            // Re-fire from the loop start (Phase 4 p-locks will pass a per-step start position here).
+
+            // Apply this step's parameter locks: revert the previous step's locks, then latch this
+            // step's. effective() reads the override in the track's updateParameters below, so the
+            // locked values shape this one-shot; they clear at the next trig.
+            params_.clearStepOverrides (t);
+            if (const Step* s = pat.step (t, step))
+                for (int k = 0; k < s->numLocks; ++k)
+                {
+                    const auto& lk = s->locks[static_cast<size_t> (k)];
+                    if (lk.paramId >= kFirstTrackParam && lk.paramId < kNumParameters)
+                        params_.setStepOverride (t, static_cast<ParameterId> (lk.paramId), lk.value);
+                }
+
             tracks_[static_cast<size_t> (t)].requestSamplerTrig (-1.0f);
         }
     }

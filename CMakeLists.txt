@@ -130,4 +130,14 @@ if(SCULPT_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
     target_compile_features(sculpt_step_sequencer_tests PRIVATE cxx_std_17)
     add_test(NAME sculpt_step_sequencer COMMAND sculpt_step_sequencer_tests)
+
+    add_executable(sculpt_param_lock_tests
+        tests/ParamLockTests.cpp
+        Source/core/ParameterState.cpp)
+    target_include_directories(sculpt_param_lock_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/core
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
+    target_compile_features(sculpt_param_lock_tests PRIVATE cxx_std_17)
+    add_test(NAME sculpt_param_lock COMMAND sculpt_param_lock_tests)
 endif()

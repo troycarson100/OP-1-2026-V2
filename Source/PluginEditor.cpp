@@ -107,12 +107,40 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
         b.setColour (juce::TextButton::buttonOnColourId, kAccent);
         b.onClick = [this, i]
         {
-            const int step  = stepPage_ * sculpt::kStepsPerPage + i;
-            const int track = getSelectedTrackFromParameter();
-            processor_.getEngine().toggleStepTrig (track, step);
+            const int step = stepPage_ * sculpt::kStepsPerPage + i;
+            if (plockMode_)
+            {
+                plockStep_ = step;   // target this step; knobs now edit its locks
+                enterLockEdit();
+            }
+            else
+                processor_.getEngine().toggleStepTrig (getSelectedTrackFromParameter(), step);
         };
         addAndMakeVisible (b);
     }
+
+    // P-LOCK arm: when armed, click a step to target it, then turn page knobs to lock that step's
+    // parameters (knobs detach from the live values while editing).
+    plockButton_.setClickingTogglesState (true);
+    plockButton_.setColour (juce::TextButton::buttonOnColourId, kParamModDot);
+    plockButton_.setTooltip ("Arm parameter-lock editing: pick a step, then turn a page knob to lock that "
+                             "parameter for that step. Un-arm to return the knobs to the live values.");
+    plockButton_.onClick = [this]
+    {
+        plockMode_ = plockButton_.getToggleState();
+        if (plockMode_)
+        {
+            if (plockStep_ >= 0)
+                enterLockEdit();
+        }
+        else
+        {
+            plockStep_ = -1;
+            rebuildPageControls(); // re-attach knobs to the live params
+            resized();
+        }
+    };
+    addAndMakeVisible (plockButton_);
 
     for (int pg = 0; pg < static_cast<int> (sculpt::Page::Count); ++pg)
     {
@@ -316,6 +344,7 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
             break;
 
         PageControl control;
+        control.id = id;
         if (id == sculpt::ParameterId::SpaceFreeze)
         {
             control.spaceFreezeToggle = std::make_unique<juce::ToggleButton> ("Freeze");
@@ -362,6 +391,24 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
                 control.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                     apvts, paramId, *control.slider);
 
+            // P-lock editing: while a step is targeted in P-LOCK mode the knob is detached from the
+            // live param (see enterLockEdit), so turning it writes/updates this step's lock only.
+            // Locks store the parameter's normalized 0..1 value (convertTo0to1 handles choice/stepped
+            // params whose slider range isn't 0..1).
+            {
+                auto* sliderPtr = control.slider.get();
+                control.slider->onValueChange = [this, id, sliderPtr]
+                {
+                    if (! (plockMode_ && plockStep_ >= 0))
+                        return;
+                    const int track = getSelectedTrackFromParameter();
+                    float norm = static_cast<float> (sliderPtr->getValue());
+                    if (auto* p = processor_.getValueTreeState().getParameter (bridge::paramIdString (track, id)))
+                        norm = p->convertTo0to1 (static_cast<float> (sliderPtr->getValue()));
+                    processor_.getEngine().setStepLock (track, plockStep_, id, norm);
+                };
+            }
+
             // Delay Time: show the musical/free value (matching the LCD + Time Mode),
             // not the raw normalized number. Set after the attachment so it wins.
             if (id == sculpt::ParameterId::SpaceDelayTime)
@@ -393,6 +440,36 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
         }
 
         pageControls_.push_back (std::move (control));
+    }
+
+    // If we rebuilt while editing locks (e.g. track changed), re-detach and reload the step's locks.
+    if (plockMode_ && plockStep_ >= 0)
+        enterLockEdit();
+}
+
+void SculptSamplerAudioProcessorEditor::enterLockEdit()
+{
+    const int track = getSelectedTrackFromParameter();
+    auto& apvts = processor_.getValueTreeState();
+    auto& engine = processor_.getEngine();
+
+    for (auto& pc : pageControls_)
+    {
+        if (pc.slider == nullptr)
+            continue;
+
+        // Detach from the live parameter so edits only touch the step's lock, not the live value.
+        pc.attachment.reset();
+
+        auto* p = apvts.getParameter (bridge::paramIdString (track, pc.id));
+        float lockNorm = 0.0f;
+        if (engine.getStepLock (track, plockStep_, pc.id, lockNorm))
+            // Show the existing lock (convert normalized -> the slider's natural range).
+            pc.slider->setValue (p != nullptr ? p->convertFrom0to1 (lockNorm) : lockNorm,
+                                 juce::dontSendNotification);
+        else if (p != nullptr)
+            // Seed from the current live value so a new lock starts where the knob is.
+            pc.slider->setValue (p->convertFrom0to1 (p->getValue()), juce::dontSendNotification);
     }
 }
 
@@ -443,10 +520,55 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
     {
         const int step = stepPage_ * sculpt::kStepsPerPage + i;
         auto& b = stepButtons_[static_cast<size_t> (i)];
-        b.setToggleState (processor_.getEngine().getStepTrig (track, step), juce::dontSendNotification);
-        const bool current = screen.seqPlaying && screen.seqCurrentStep == step;
-        b.setColour (juce::TextButton::buttonColourId,
-                     current ? sculpt_editor::kMeter : sculpt_editor::kBackground.brighter (0.15f));
+        auto& engine2 = processor_.getEngine();
+        b.setToggleState (engine2.getStepTrig (track, step), juce::dontSendNotification);
+
+        const bool current  = screen.seqPlaying && screen.seqCurrentStep == step;
+        const bool targeted = plockMode_ && plockStep_ == step;
+        const bool hasLocks = engine2.stepLockCount (track, step) > 0;
+
+        juce::Colour bg = sculpt_editor::kBackground.brighter (0.15f);
+        if (targeted)      bg = sculpt_editor::kText.withAlpha (0.55f);  // selected for lock editing
+        else if (current)  bg = sculpt_editor::kMeter;                   // playhead
+        else if (hasLocks) bg = sculpt_editor::kParamModDot;             // has p-locks
+        b.setColour (juce::TextButton::buttonColourId, bg);
+
+        // Mark locked steps with a trailing dot so locks are visible even on trig (orange) steps.
+        b.setButtonText (juce::String (step + 1) + (hasLocks ? " *" : ""));
+    }
+
+    // Knob following: during playback (when not editing a step's locks), the page knobs reflect the
+    // selected track's effective values, so p-locks are visible jumping per step. dontSendNotification
+    // moves the knob visually without writing back to the live (base) parameter.
+    {
+        auto& apvts3 = processor_.getValueTreeState();
+        const bool lockEditing = plockMode_ && plockStep_ >= 0;
+        const bool following   = screen.seqPlaying && ! lockEditing;
+        if (following)
+        {
+            for (auto& pc : pageControls_)
+            {
+                if (pc.slider == nullptr || pc.slider->isMouseButtonDown())
+                    continue;
+                const float eff = processor_.getEngine().getEffectiveTrackParameter (track, pc.id);
+                float natural = eff;
+                if (auto* p = apvts3.getParameter (bridge::paramIdString (track, pc.id)))
+                    natural = p->convertFrom0to1 (eff);
+                pc.slider->setValue (natural, juce::dontSendNotification);
+            }
+            knobsFollowing_ = true;
+        }
+        else if (knobsFollowing_)
+        {
+            // Follow ended (playback stopped): resync knobs to their live values, unless lock-editing
+            // (enterLockEdit already loaded the targeted step's values).
+            knobsFollowing_ = false;
+            if (! lockEditing)
+                for (auto& pc : pageControls_)
+                    if (pc.slider != nullptr)
+                        if (auto* p = apvts3.getParameter (bridge::paramIdString (track, pc.id)))
+                            pc.slider->setValue (p->convertFrom0to1 (p->getValue()), juce::dontSendNotification);
+        }
     }
 
     for (int pg = 0; pg < static_cast<int> (sculpt::Page::Count); ++pg)
@@ -521,6 +643,7 @@ void SculptSamplerAudioProcessorEditor::resized()
     seqPlayButton_.setBounds (seqRow.removeFromLeft (76).reduced (2, 3));
     machineButton_.setBounds (seqRow.removeFromLeft (74).reduced (2, 3));
     stepPageButton_.setBounds (seqRow.removeFromLeft (56).reduced (2, 3));
+    plockButton_.setBounds (seqRow.removeFromLeft (64).reduced (2, 3));
     seqRow.removeFromLeft (6);
     {
         const int stepCell = juce::jmax (1, seqRow.getWidth() / sculpt::kStepsPerPage);
