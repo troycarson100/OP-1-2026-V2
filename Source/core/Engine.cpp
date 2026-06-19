@@ -57,6 +57,7 @@ void Engine::prepare (double sampleRate, int blockSize)
 
     clock_.prepare (sampleRate_);
     mixer_.prepare (sampleRate_);
+    metronome_.prepare (sampleRate_);
     inputEnvelope_.prepare (sampleRate_);
     inputEnvelope_.setTimesMs (5.0f, 150.0f);
 
@@ -89,6 +90,8 @@ void Engine::reset()
     inputEnvelope_.reset();
     modEngine_.reset();
     stepSeq_.reset();
+    metronome_.reset();
+    transportBeatOrigin_ = 0.0;
     trackPeaks_.fill (0.0f);
     masterPeakL_ = masterPeakR_ = 0.0f;
 }
@@ -440,6 +443,8 @@ void Engine::applyPendingRequests()
     if (startSeq)
     {
         stepSeq_.start();
+        // Anchor tempo-synced modulation to this downbeat so synced LFOs reset/align with the pattern.
+        transportBeatOrigin_ = clock_.getBeatPosition();
         for (int t = 0; t < kNumTracks; ++t)
         {
             tracks_[static_cast<size_t> (t)].resetSliceCursor(); // predictable slice order from step 0
@@ -650,8 +655,9 @@ void Engine::updateModulation (float** inputs, int numInputChannels, int offset,
     macros_.setMacro (3, params_.getGlobal (ParameterId::Macro4));
 
     params_.clearModOffsets();
+    // Transport-relative beat: 0 at the last PLAY so synced LFOs phase-align to the bar/step grid.
     modEngine_.apply (params_, inputEnvelope_.getValue(), numSamples,
-                      beatAtBlockStart, clock_.getBpm(), sampleRate_);
+                      beatAtBlockStart - transportBeatOrigin_, clock_.getBpm(), sampleRate_);
 }
 
 void Engine::processChunk (float** inputs, float** outputs,
@@ -727,6 +733,12 @@ void Engine::processChunk (float** inputs, float** outputs,
     float* outL = outputs[0] + offset;
     float* outR = (numOutputChannels > 1 ? outputs[1] : outputs[0]) + offset;
     mixer_.process (busLPtrs, busRPtrs, outL, outR, numSamples);
+
+    // Metronome click on top of the mix (monitor level, transport-aligned downbeat). Only clicks
+    // while the transport is running, so arming METRO doesn't tick until PLAY.
+    metronome_.setEnabled (metronomeEnabled_.load (std::memory_order_relaxed) && stepSeq_.isPlaying());
+    metronome_.process (outL, (numOutputChannels > 1 ? outR : nullptr), numSamples,
+                        beatAtBlockStart - transportBeatOrigin_, granularTiming.samplesPerBeat);
 
     // Silence any extra output channels.
     for (int ch = 2; ch < numOutputChannels; ++ch)
@@ -899,7 +911,8 @@ void Engine::updateScreenModel()
     {
         const int    trk    = getSelectedTrack();
         const int    slot   = modLcdSlot_.load (std::memory_order_relaxed);
-        const double beatEnd = clock_.getBeatPosition();
+        // Transport-relative beat so the synced scope scanner aligns with the audio (resets on PLAY).
+        const double beatEnd = clock_.getBeatPosition() - transportBeatOrigin_;
         // Build into a local then assign once: writeModLcdSnapshot transiently sets active=false
         // and zeroes the curves before filling them. Writing that directly into the shared
         // screen_.modLcd lets the GUI catch the blank state mid-update -> whole-LCD flicker.

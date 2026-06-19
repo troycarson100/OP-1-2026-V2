@@ -41,6 +41,7 @@ private:
     juce::Label titleLabel_;
     std::array<juce::TextButton, 4> sceneButtons_;
     juce::ToggleButton sceneSaveMode_ { "SAVE" };
+    juce::TextButton   metroButton_ { "METRO" }; // metronome click toggle (by the BPM, in the header)
 
     // SELECT = main output level (always; same role as S-4 select on MIX).
     juce::Label       selectLabel_;

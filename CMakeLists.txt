@@ -149,4 +149,20 @@ if(SCULPT_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
     target_compile_features(sculpt_pattern_serialize_tests PRIVATE cxx_std_17)
     add_test(NAME sculpt_pattern_serialize COMMAND sculpt_pattern_serialize_tests)
+
+    add_executable(sculpt_mod_sync_tests
+        tests/ModSyncTests.cpp
+        Source/modulation/ModEngine.cpp
+        Source/modulation/LFO.cpp
+        Source/modulation/RandomModulator.cpp
+        Source/modulation/AdsrModulator.cpp
+        Source/modulation/Modulator.cpp
+        Source/core/ParameterState.cpp
+        Source/ui/PageModel.cpp)
+    target_include_directories(sculpt_mod_sync_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/core
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
+    target_compile_features(sculpt_mod_sync_tests PRIVATE cxx_std_17)
+    add_test(NAME sculpt_mod_sync COMMAND sculpt_mod_sync_tests)
 endif()

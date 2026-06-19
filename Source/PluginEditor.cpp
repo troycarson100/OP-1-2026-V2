@@ -37,6 +37,13 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     addAndMakeVisible (sceneSaveMode_);
     sceneSaveMode_.setColour (juce::ToggleButton::textColourId, kText);
 
+    // Metronome toggle, up by the BPM in the header.
+    metroButton_.setClickingTogglesState (true);
+    metroButton_.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    metroButton_.setTooltip ("Metronome: click on every beat, accented on the bar downbeat.");
+    metroButton_.onClick = [this] { processor_.getEngine().setMetronomeEnabled (metroButton_.getToggleState()); };
+    addAndMakeVisible (metroButton_);
+
     selectLabel_.setText ("SELECT", juce::dontSendNotification);
     selectLabel_.setJustificationType (juce::Justification::centred);
     selectLabel_.setColour (juce::Label::textColourId, kText);
@@ -612,6 +619,8 @@ void SculptSamplerAudioProcessorEditor::resized()
     auto area = getLocalBounds().reduced (12);
 
     auto header = area.removeFromTop (30);
+    metroButton_.setBounds (header.removeFromRight (62).reduced (2, 2));
+    header.removeFromRight (8);
     sceneSaveMode_.setBounds (header.removeFromRight (72));
     for (int s = 3; s >= 0; --s)
         sceneButtons_[static_cast<size_t> (s)].setBounds (header.removeFromRight (36).reduced (2, 0));

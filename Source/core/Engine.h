@@ -12,6 +12,7 @@
 #include "../audio/Track.h"
 #include "../audio/SampleBuffer.h"
 #include "../audio/Mixer.h"
+#include "../audio/Metronome.h"
 #include "../modulation/EnvelopeFollower.h"
 #include "../modulation/MacroControls.h"
 #include "../modulation/ModEngine.h"
@@ -85,6 +86,10 @@ public:
     void stopSequencer();
     bool isSequencerPlaying() const     { return stepSeq_.isPlaying(); }
     int  getSequencerCurrentStep() const { return stepSeq_.currentStep(); }
+
+    // Metronome click toggle (UI thread). Clicks every beat, accented on the bar downbeat.
+    void setMetronomeEnabled (bool on) { metronomeEnabled_.store (on, std::memory_order_relaxed); }
+    bool isMetronomeEnabled() const    { return metronomeEnabled_.load (std::memory_order_relaxed); }
 
     // Pattern editing (message / UI thread).
     void toggleStepTrig (int track, int step);
@@ -171,9 +176,15 @@ private:
     SceneManager   sceneManager_;
     PatternManager patternMgr_;
     StepSequencer  stepSeq_;
+    // Clock beat captured when the master transport last started. Tempo-synced modulation references
+    // (clockBeat - this) so a synced LFO's phase resets to 0 on PLAY and lines up with the sequencer
+    // bar/step grid, while the free-running clock itself (granular/warp timing) is left untouched.
+    double         transportBeatOrigin_ = 0.0;
 
     std::array<Track, kNumTracks> tracks_;
     Mixer mixer_;
+    Metronome metronome_;
+    std::atomic<bool> metronomeEnabled_ { false };
 
     EnvelopeFollower inputEnvelope_;
     MacroControls    macros_;
