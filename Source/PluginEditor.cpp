@@ -15,28 +15,6 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     titleLabel_.setFont (juce::FontOptions (15.0f));
     addAndMakeVisible (titleLabel_);
 
-    for (int s = 0; s < 4; ++s)
-    {
-        auto& b = sceneButtons_[static_cast<size_t> (s)];
-        b.setButtonText (juce::String::charToString (juce::juce_wchar ('A' + s)));
-        b.onClick = [this, s]
-        {
-            auto& engine = processor_.getEngine();
-            if (sceneSaveMode_.getToggleState())
-            {
-                engine.saveCurrentScene (s);
-                sceneSaveMode_.setToggleState (false, juce::dontSendNotification);
-            }
-            else
-            {
-                engine.recallScene (s);
-            }
-        };
-        addAndMakeVisible (b);
-    }
-    addAndMakeVisible (sceneSaveMode_);
-    sceneSaveMode_.setColour (juce::ToggleButton::textColourId, kText);
-
     // Metronome toggle, up by the BPM in the header.
     metroButton_.setClickingTogglesState (true);
     metroButton_.setColour (juce::TextButton::buttonOnColourId, kAccent);
@@ -180,20 +158,6 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
         };
         b.setVisible (false);
         addAndMakeVisible (b);
-    }
-
-    auto& apvts = processor_.getValueTreeState();
-
-    for (int m = 0; m < sculpt::kNumMacros; ++m)
-    {
-        const auto ms = static_cast<size_t> (m);
-        auto& slider = macroSliders_[ms];
-        slider.setSliderStyle (juce::Slider::LinearHorizontal);
-        slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
-        slider.setColour (juce::Slider::trackColourId, kAccent);
-        addAndMakeVisible (slider);
-        macroAttachments_[ms] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-            apvts, "macro" + juce::String (m + 1), slider);
     }
 
     addAndMakeVisible (loadSampleButton_);
@@ -620,18 +584,7 @@ void SculptSamplerAudioProcessorEditor::resized()
 
     auto header = area.removeFromTop (30);
     metroButton_.setBounds (header.removeFromRight (62).reduced (2, 2));
-    header.removeFromRight (8);
-    sceneSaveMode_.setBounds (header.removeFromRight (72));
-    for (int s = 3; s >= 0; --s)
-        sceneButtons_[static_cast<size_t> (s)].setBounds (header.removeFromRight (36).reduced (2, 0));
     titleLabel_.setBounds (header);
-
-    area.removeFromTop (8);
-
-    auto macroRow = area.removeFromTop (28);
-    const int macroCell = macroRow.getWidth() / sculpt::kNumMacros;
-    for (int m = 0; m < sculpt::kNumMacros; ++m)
-        macroSliders_[static_cast<size_t> (m)].setBounds (macroRow.removeFromLeft (macroCell).reduced (4, 2));
 
     area.removeFromTop (8);
 

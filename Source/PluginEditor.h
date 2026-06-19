@@ -39,8 +39,6 @@ private:
 
     // Header / scenes
     juce::Label titleLabel_;
-    std::array<juce::TextButton, 4> sceneButtons_;
-    juce::ToggleButton sceneSaveMode_ { "SAVE" };
     juce::TextButton   metroButton_ { "METRO" }; // metronome click toggle (by the BPM, in the header)
 
     // SELECT = main output level (always; same role as S-4 select on MIX).
@@ -104,10 +102,6 @@ private:
     // Space page: keep the Time rotary's text box in sync with the Time Mode knob.
     juce::Slider* spaceTimeSlider_ = nullptr;
     int           spaceTimeModeIdx_ = 3;
-
-    // Macros
-    std::array<juce::Slider, sculpt::kNumMacros> macroSliders_;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, sculpt::kNumMacros> macroAttachments_;
 
     std::unique_ptr<ModPagePanel> modPagePanel_;
     juce::Viewport                  modPageViewport_;
