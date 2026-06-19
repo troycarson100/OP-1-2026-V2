@@ -121,4 +121,13 @@ if(SCULPT_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
     target_compile_features(sculpt_granular_pattern_tests PRIVATE cxx_std_17)
     add_test(NAME sculpt_granular_pattern COMMAND sculpt_granular_pattern_tests)
+
+    add_executable(sculpt_step_sequencer_tests
+        tests/StepSequencerTests.cpp)
+    target_include_directories(sculpt_step_sequencer_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/core
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
+    target_compile_features(sculpt_step_sequencer_tests PRIVATE cxx_std_17)
+    add_test(NAME sculpt_step_sequencer COMMAND sculpt_step_sequencer_tests)
 endif()

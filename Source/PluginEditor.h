@@ -49,7 +49,19 @@ private:
 
     // Tracks
     std::array<juce::TextButton, sculpt::kNumTracks> trackButtons_;
-    std::array<juce::TextButton, sculpt::kNumTracks> playButtons_;
+    // Mute mode: when armed (reddish), clicking a track toggles its mute instead of selecting it.
+    juce::TextButton muteButton_ { "MUTE" };
+    bool muteMode_ = false;
+
+    // Step sequencer row: master transport, per-track machine toggle, step-page toggle,
+    // and 16 step buttons (showing 1-16 or 17-32 of the selected track's lane).
+    juce::TextButton seqPlayButton_ { "PLAY ALL" };
+    juce::TextButton machineButton_ { "MACH" };
+    juce::TextButton stepPageButton_ { "1-16" };
+    std::array<juce::TextButton, sculpt::kStepsPerPage> stepButtons_;
+    int stepPage_ = 0;   // 0 = steps 0..15, 1 = steps 16..31
+    void toggleStepPage();
+    void toggleSelectedMachine();
 
     // Pages (device row + MIX)
     std::array<juce::TextButton, static_cast<size_t> (sculpt::Page::Count)> pageButtons_;

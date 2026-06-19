@@ -38,6 +38,11 @@ public:
     // Snap read position to normalized time within the loop region (message / param sync).
     void seekNormalized (float position01, int numFrames, float loopStart01, float loopEnd01);
 
+    // Sampler-style retrigger: jump the read head to position01 within the loop and keep playing,
+    // crossfading from the old head to the new one over a short declick window (no click even when
+    // the track is already sounding). Used by the step sequencer for Sampler-machine tracks.
+    void retrigger (float position01, int numFrames, float loopStart01, float loopEnd01) noexcept;
+
     // While playing + user scrubs the playhead, follow the target with slew limiting instead
     // of snapping each block (avoids zipper/clicks). Call each parameter update before seekNormalized.
     void setFollowScrubTarget (bool shouldFollow) noexcept;
@@ -90,6 +95,12 @@ private:
     // instead of jumping (no seam click) or reading the sweep directly (no pitch scrub). scrubMix_
     // crossfades the dry single stream against the grain cloud at engage/disengage edges; the hold
     // counter detects the drag stopping so the cloud hands cleanly back to dry playback.
+    // One-shot (loopMode_ == false) amplitude envelope: a short fade-in on retrigger-from-silence
+    // and a short fade-out as the head approaches the loop end, so each Sampler step is click-free.
+    int oneShotFadeInRemain_ = 0;
+    int oneShotFadeInLen_    = 1;
+    int oneShotFadeOutLen_   = 1;
+
     TapeGrainScrub scrub_;
     SmoothedValue  scrubMix_;          // 0 = dry single stream, 1 = grain cloud
     bool           scrubEngaged_ = false;

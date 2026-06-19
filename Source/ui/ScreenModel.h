@@ -100,6 +100,11 @@ struct ScreenModel
     std::array<float, kNumTracks> grainActivity {};   // 0..1 pool usage
     std::array<float, kNumTracks> tapePosition {};    // 0..1 playhead
 
+    // Step sequencer: master transport + current playhead step (0..kNumSteps-1).
+    bool seqPlaying      = false;
+    int  seqCurrentStep  = 0;
+    int  seqPatternIndex = 0;
+
     float masterMeterL = 0.0f;
     float masterMeterR = 0.0f;
 

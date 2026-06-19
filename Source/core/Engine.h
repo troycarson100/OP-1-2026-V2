@@ -7,6 +7,8 @@
 #include "Clock.h"
 #include "Transport.h"
 #include "SceneManager.h"
+#include "PatternManager.h"
+#include "StepSequencer.h"
 #include "../audio/Track.h"
 #include "../audio/SampleBuffer.h"
 #include "../audio/Mixer.h"
@@ -47,11 +49,35 @@ public:
     void triggerTrack (int trackIndex);
     void stopTrack (int trackIndex);
 
+    // Per-track mute (performance state). A muted track's level is taken to 0 in the mix (smoothed).
+    void setTrackMuted (int trackIndex, bool muted);
+    void toggleTrackMuted (int trackIndex);
+    bool isTrackMuted (int trackIndex) const;
+
     void requestSpaceClear (int trackIndex);
 
     void setCurrentScene (int sceneIndex);
     void saveCurrentScene (int sceneIndex);
     void recallScene (int sceneIndex);
+
+    // Master transport: start the sequencer AND launch all Torso-machine tracks at once (Sampler
+    // tracks are driven by the sequencer); stop halts the sequencer and all tracks. Latched.
+    void masterPlay();
+    void masterStop();
+
+    // Step sequencer (master transport). Thread-safe: play/stop are latched and applied at the
+    // start of the next audio block; trig edits write the live pattern directly (message thread).
+    void startSequencer();
+    void stopSequencer();
+    bool isSequencerPlaying() const     { return stepSeq_.isPlaying(); }
+    int  getSequencerCurrentStep() const { return stepSeq_.currentStep(); }
+
+    // Pattern editing (message / UI thread).
+    void toggleStepTrig (int track, int step);
+    void setStepTrig (int track, int step, bool on);
+    bool getStepTrig (int track, int step) const;
+    int  getCurrentPatternIndex() const { return patternMgr_.getCurrentIndex(); }
+    void setCurrentPatternIndex (int idx);
 
     // Direct capture entry point (audio thread only).
     void captureToTrack (int trackIndex, const float** inputs, int numChannels, int numSamples);
@@ -115,10 +141,14 @@ private:
 
     void fillMixBusWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope) const;
 
+    void advanceStepSequencer (double samplesPerBeat, int numSamples);
+
     ParameterState params_;
     Clock          clock_;
     Transport      transport_;
     SceneManager   sceneManager_;
+    PatternManager patternMgr_;
+    StepSequencer  stepSeq_;
 
     std::array<Track, kNumTracks> tracks_;
     Mixer mixer_;
@@ -140,6 +170,9 @@ private:
     // True while the Material playhead control is in an active change gesture (scrub).
     std::array<std::atomic<bool>, kNumTracks> materialPlayheadScrubActive_ {};
 
+    // Per-track mute (UI thread sets, audio thread reads when summing the mix).
+    std::array<std::atomic<bool>, kNumTracks> trackMuted_ {};
+
     // Warp mode: quantize PLAY to the next host beat; align loop phase to another playing warp track when present.
     std::array<bool, kNumTracks>   warpLaunchPending_{};
     std::array<double, kNumTracks> warpLaunchTargetBeat_{};
@@ -151,6 +184,10 @@ private:
     std::atomic<uint32_t> pendingStops_ { 0 };
     std::atomic<int>      pendingSceneSave_ { -1 };
     std::atomic<int>      pendingSceneRecall_ { -1 };
+    // Step sequencer transport command latched from the UI: 0 = none, 1 = start, 2 = stop.
+    std::atomic<int>      pendingSeqCmd_ { 0 };
+    // Master transport command latched from the UI: 0 = none, 1 = play-all, 2 = stop-all.
+    std::atomic<int>      pendingMasterCmd_ { 0 };
 
     double sampleRate_ = kDefaultSampleRate;
     bool   prepared_   = false;

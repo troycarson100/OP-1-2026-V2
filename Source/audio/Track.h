@@ -26,6 +26,12 @@ public:
     void stop();
     bool isPlaying() const { return playing_; }
 
+    // Sampler-machine trig (step sequencer): on the next updateParameters, seek the read head to
+    // pos01 within the (snapped) loop region and re-fire playback from there. pos01 < 0 means "loop
+    // start". Deferred to updateParameters so the seek uses the same snapped loop bounds the tape
+    // gets this block. Phase 4 p-locks will pass a per-step start position here.
+    void requestSamplerTrig (float pos01 = -1.0f) { samplerTrigPending_ = true; samplerTrigPos01_ = pos01; }
+
     // Live input capture into the material buffer.
     void captureInput (const float* const* inputs, int numChannels, int numSamples);
     void setCaptureArmed (bool armed);
@@ -68,6 +74,10 @@ private:
     // After STOP, skip mapping APVTS playhead → tape until the user scrubs the playhead again.
     // The stored playhead param can lag live tape during play; snapping it on stop caused a click.
     bool ignoreStoppedPlayheadSeek_ = false;
+
+    // Pending sampler-machine trig from the step sequencer (applied in updateParameters).
+    bool  samplerTrigPending_ = false;
+    float samplerTrigPos01_   = -1.0f;
 };
 
 } // namespace sculpt

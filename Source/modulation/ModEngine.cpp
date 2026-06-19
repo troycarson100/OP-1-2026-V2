@@ -59,7 +59,7 @@ void ModEngine::triggerAdsr (int track, int slot)
 {
     if (track < 0 || track >= kNumTracks || slot < 0 || slot >= kModSlotsPerTrack)
         return;
-    const uint32_t bit = 1u << static_cast<uint32_t> (track * kModSlotsPerTrack + slot);
+    const uint64_t bit = 1ull << static_cast<uint64_t> (track * kModSlotsPerTrack + slot);
     pendingAdsrTrig_.fetch_or (bit, std::memory_order_relaxed);
 }
 
@@ -140,12 +140,12 @@ void ModEngine::apply (ParameterState& params, float inputEnv01, int numSamples,
                                  : 0.0;
     const double beatAtBlockEnd = beatAtBlockStart + beatDelta;
 
-    const uint32_t trig = pendingAdsrTrig_.exchange (0, std::memory_order_acq_rel);
+    const uint64_t trig = pendingAdsrTrig_.exchange (0, std::memory_order_acq_rel);
     for (int t = 0; t < kNumTracks; ++t)
     {
         for (int s = 0; s < kModSlotsPerTrack; ++s)
         {
-            if (trig & (1u << static_cast<uint32_t> (t * kModSlotsPerTrack + s)))
+            if (trig & (1ull << static_cast<uint64_t> (t * kModSlotsPerTrack + s)))
                 adsrs_[static_cast<size_t> (t)][static_cast<size_t> (s)].trigger();
         }
     }

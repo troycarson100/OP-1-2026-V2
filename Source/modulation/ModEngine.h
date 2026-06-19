@@ -53,7 +53,8 @@ private:
     std::array<std::array<RandomModulator, kModSlotsPerTrack>, kNumTracks> rnds_ {};
     std::array<std::array<AdsrModulator, kModSlotsPerTrack>, kNumTracks>   adsrs_ {};
 
-    std::atomic<uint32_t> pendingAdsrTrig_ { 0 };
+    // Bit i = track t slot s, i = t*kModSlotsPerTrack+s. 64-bit: 16 tracks x 4 slots = 64 bits.
+    std::atomic<uint64_t> pendingAdsrTrig_ { 0 };
 };
 
 } // namespace sculpt

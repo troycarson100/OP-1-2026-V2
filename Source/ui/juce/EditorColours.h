@@ -11,6 +11,7 @@ namespace sculpt_editor
     inline const juce::Colour kAccent   { 0xffe8734a };
     inline const juce::Colour kMeter    { 0xff5fb89a };
     inline const juce::Colour kText     { 0xffd8dadf };
+    inline const juce::Colour kMute     { 0xffc2444a }; // muted track / armed mute button (red)
 
     // Material LCD waveform (high contrast, S-4-inspired)
     inline const juce::Colour kLcdWaveformBg { 0xff050608 };

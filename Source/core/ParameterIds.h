@@ -135,6 +135,11 @@ enum class ParameterId : int
     // as an offset when following. Placed at the enum end to avoid renumbering existing parameters.
     GrainFollow,
 
+    // Per-track machine type: <=0.5 = Torso (current Tape/Warp/Granular free-run behavior);
+    // >0.5 = Sampler (Digitakt-style voice driven by the step sequencer). Appended at the enum
+    // end to avoid renumbering existing parameters / breaking saved state.
+    MaterialMachine,
+
     Count
 };
 
@@ -223,6 +228,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialLoopXfade:   return 0.18f; // ~10 ms
         case ParameterId::MaterialGridDivision: return 0.8f;  // 1/16 (index 4 of 0..5)
         case ParameterId::GrainFollow:     return 0.0f;   // static position (legacy behavior)
+        case ParameterId::MaterialMachine: return 1.0f;   // Sampler by default (silent until sequenced)
         case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -576,6 +582,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MaterialPitchKey:   return "Key";
         case ParameterId::MaterialLoopXfade:   return "Cross Fade";
         case ParameterId::MaterialGridDivision: return "Grid Div";
+        case ParameterId::MaterialMachine: return "Machine";
         case ParameterId::LoopSnapGrid:    return "Loop Snap";
         default:                           return "Unknown";
     }

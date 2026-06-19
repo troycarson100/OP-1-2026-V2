@@ -4,10 +4,15 @@
 namespace sculpt
 {
 
-constexpr int    kNumTracks            = 4;
+constexpr int    kNumTracks            = 16;
 constexpr int    kNumScenes            = 8;
 constexpr int    kNumMacros            = 4;
 constexpr int    kNumPages             = 7;
+
+// Step sequencer (Digitakt-style): 32 steps shown as 16 buttons over 2 pages.
+constexpr int    kNumSteps             = 32;
+constexpr int    kStepsPerPage         = 16;
+constexpr int    kNumSeqPatterns       = 16;   // pattern bank size
 
 // Encoder slots on device pages (Material..Mixer) used for mod mapping grid.
 constexpr int    kMaxModMappingEncoders  = 8;

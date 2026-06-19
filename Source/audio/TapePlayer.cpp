@@ -45,6 +45,8 @@ void TapePlayer::prepare (double sampleRate)
     scrub_.prepare (sampleRate_);
     scrubMix_.prepare (sampleRate_, 0.025f); // ~25 ms engage/disengage crossfade (matches cloud build-up)
     scrubMix_.snap (0.0f);
+    oneShotFadeInLen_  = std::max (8, static_cast<int> (sampleRate_ * 0.003)); // ~3 ms
+    oneShotFadeOutLen_ = std::max (8, static_cast<int> (sampleRate_ * 0.006)); // ~6 ms
     reset();
 }
 
@@ -61,6 +63,7 @@ void TapePlayer::reset()
     scrubOutLp2R_       = 0.0f;
     scrubLpPrimed_      = false;
     wrapBlendRemain_    = 0;
+    oneShotFadeInRemain_ = 0;
     scrub_.reset();
     scrubMix_.snap (0.0f);
     scrubEngaged_        = false;
@@ -172,6 +175,53 @@ void TapePlayer::seekNormalized (float position01, int numFrames, float loopStar
     // Jumping the playhead: align smoothed loop region immediately (avoids transient mismatch).
     loopStartSm_.snap (loopStartTarget_);
     loopEndSm_.snap (loopEndTarget_);
+}
+
+void TapePlayer::retrigger (float position01, int numFrames, float loopStart01, float loopEnd01) noexcept
+{
+    if (numFrames < 2)
+        return;
+
+    const double last = static_cast<double> (numFrames - 1);
+    const double rs   = static_cast<double> (clamp01 (loopStart01)) * last;
+    const double re   = static_cast<double> (clamp01 (loopEnd01)) * last;
+    if (re - rs < 1.0)
+        return;
+
+    double target = static_cast<double> (clamp01 (position01)) * last;
+    if (target < rs)
+        target = rs;
+    const double maxP = std::max (rs, re - 1.0e-4);
+    if (target > maxP)
+        target = maxP;
+
+    // If already sounding, crossfade from the current head to the new one over a short, fixed declick
+    // window (independent of the loop crossfade so it never collapses to a click). The process loop's
+    // wrap-blend reads the old tail (fading out) against the new head (fading in).
+    const bool wasPlaying = playing_ && ! followScrubTarget_ && ! scrubEngaged_;
+    if (wasPlaying)
+    {
+        const int fade    = std::max (32, static_cast<int> (sampleRate_ * 0.004)); // ~4 ms
+        wrapBlendFromPos_ = position_;
+        wrapBlendLen_     = fade;
+        blendFadeIn_      = fade;
+        blendFadeOut_     = fade;
+        wrapBlendRemain_  = fade;
+        oneShotFadeInRemain_ = 0; // crossfade already eases the new head in
+    }
+    else
+    {
+        // Starting from silence: ramp the one-shot in so the jump to a non-zero sample doesn't click.
+        oneShotFadeInRemain_ = oneShotFadeInLen_;
+    }
+
+    position_    = target;
+    smoothRead_  = target;
+    scrubTarget_ = target;
+    smoothInit_  = false;
+    loopStartSm_.snap (loopStartTarget_);
+    loopEndSm_.snap (loopEndTarget_);
+    playing_ = true;
 }
 
 bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regionEnd,
@@ -428,6 +478,25 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
             rawR = gOut * fromR + gIn * rawR;
             wrapBlendFromPos_ += static_cast<double> (speed_); // old tail keeps moving
             --wrapBlendRemain_;
+        }
+
+        // One-shot amplitude envelope: short fade-in after a from-silence retrigger and a short
+        // fade-out as the head nears the loop end, so the non-looping voice never clicks at the seam.
+        if (! loopMode_)
+        {
+            float amp = 1.0f;
+            if (oneShotFadeInRemain_ > 0)
+            {
+                amp = 1.0f - static_cast<float> (oneShotFadeInRemain_) / static_cast<float> (oneShotFadeInLen_);
+                --oneShotFadeInRemain_;
+            }
+            const double spd   = std::max (1.0e-6, static_cast<double> (std::fabs (speed_)));
+            const double toEnd = (speed_ >= 0.0f) ? (regionEnd - position_) / spd
+                                                  : (position_ - regionStart) / spd;
+            if (toEnd < static_cast<double> (oneShotFadeOutLen_))
+                amp *= static_cast<float> (std::max (0.0, toEnd / static_cast<double> (oneShotFadeOutLen_)));
+            rawL *= amp;
+            rawR *= amp;
         }
 
         // Crossfade dry single stream against the boundary-tracking grain cloud.

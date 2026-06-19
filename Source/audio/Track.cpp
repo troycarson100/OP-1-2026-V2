@@ -105,6 +105,10 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     const int t = trackIndex;
     auto get = [&state, t] (ParameterId id) { return state.effective (t, id); };
 
+    // Sampler machine: Digitakt-style voice. Plays the loop region once per step trig (one-shot, no
+    // loop) and runs the tape only (granular cloud is silenced). Torso machine keeps looping + grains.
+    const bool sampler = get (ParameterId::MaterialMachine) > 0.5f;
+
     setCaptureArmed (get (ParameterId::CaptureArm) > 0.5f);
 
     engine_.setMaterialLevel (get (ParameterId::MaterialLevel));
@@ -152,6 +156,8 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     tape.setSpeedRatio (speedRatio);
     tape.setLoopRegion (loopLo, loopHi);
     tape.setLevel (1.0f);
+    // Sampler = one-shot (stop at loop end); Torso = continuous loop.
+    tape.setLoopMode (! sampler);
     const float xfadeSec = map::loopFadeSeconds (get (ParameterId::MaterialLoopXfade));
     tape.setLoopFades (xfadeSec, xfadeSec);
 
@@ -166,6 +172,21 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
 
     // Follow knob while gesturing (tape keeps running); seek above updates scrubTarget first.
     tape.setFollowScrubTarget (materialPlayheadScrub);
+
+    // Sampler-machine trig from the step sequencer: re-seek the read head to the loop start (or the
+    // p-locked position) and re-fire from there, so every step restarts the sample cleanly.
+    if (samplerTrigPending_)
+    {
+        const float pos = samplerTrigPos01_ < 0.0f ? loopLo : std::clamp (samplerTrigPos01_, 0.0f, 1.0f);
+        // Crossfaded read-head jump (declick) rather than a hard seek; the gate just opens (it ramps
+        // up from silence only when the track was stopped, so no level discontinuity either way).
+        tape.retrigger (pos, matFrames, loopLo, loopHi);
+        engine_.getGranular().setActive (true);
+        gate_.gateOn();
+        playing_                   = true;
+        ignoreStoppedPlayheadSeek_ = true;
+        samplerTrigPending_        = false;
+    }
 
     GranularEngine::Params gp;
     gp.position = get (ParameterId::GrainPosition);
@@ -198,7 +219,10 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     gp.randAmp            = get (ParameterId::GrainRandAmp);
     engine_.getGranular().setParams (gp);
     engine_.setGranularBlockTiming (granularTiming);
-    if (materialPlayheadScrub)
+    if (sampler)
+        // Sampler machine is tape-only; keep the granular cloud silent so trigs are clean one-shots.
+        engine_.setGrainMix (0.0f);
+    else if (materialPlayheadScrub)
         // Strong duck of granular layer while scanning; tape path does the scrubbing.
         engine_.snapGrainMix (gp.mix * 0.05f);
     else

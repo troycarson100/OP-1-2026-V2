@@ -65,13 +65,13 @@ void Engine::prepare (double sampleRate, int blockSize)
     }
 
     modEngine_.prepare (sampleRate_);
+    stepSeq_.prepare (sampleRate_);
 
     macros_.reset();
     prepared_ = true;
 
-    // The prototype should make sound immediately: start all four tracks.
-    for (int t = 0; t < kNumTracks; ++t)
-        tracks_[static_cast<size_t> (t)].trigger();
+    // Nothing plays on open: tracks default to the Sampler machine and stay silent until the step
+    // sequencer trigs them (Torso tracks are launched by PLAY ALL / per-track / MIDI triggers).
 }
 
 void Engine::reset()
@@ -86,6 +86,7 @@ void Engine::reset()
         scrub.store (false, std::memory_order_relaxed);
     inputEnvelope_.reset();
     modEngine_.reset();
+    stepSeq_.reset();
     trackPeaks_.fill (0.0f);
     masterPeakL_ = masterPeakR_ = 0.0f;
 }
@@ -168,6 +169,28 @@ void Engine::stopTrack (int trackIndex)
 {
     if (trackIndex >= 0 && trackIndex < kNumTracks)
         pendingStops_.fetch_or (1u << trackIndex);
+}
+
+void Engine::setTrackMuted (int trackIndex, bool muted)
+{
+    if (trackIndex >= 0 && trackIndex < kNumTracks)
+        trackMuted_[static_cast<size_t> (trackIndex)].store (muted, std::memory_order_relaxed);
+}
+
+void Engine::toggleTrackMuted (int trackIndex)
+{
+    if (trackIndex >= 0 && trackIndex < kNumTracks)
+    {
+        const auto ts = static_cast<size_t> (trackIndex);
+        trackMuted_[ts].store (! trackMuted_[ts].load (std::memory_order_relaxed), std::memory_order_relaxed);
+    }
+}
+
+bool Engine::isTrackMuted (int trackIndex) const
+{
+    if (trackIndex < 0 || trackIndex >= kNumTracks)
+        return false;
+    return trackMuted_[static_cast<size_t> (trackIndex)].load (std::memory_order_relaxed);
 }
 
 void Engine::setCurrentScene (int sceneIndex)
@@ -364,6 +387,69 @@ void Engine::applyPendingRequests()
     const int recall = pendingSceneRecall_.exchange (-1);
     if (recall >= 0)
         sceneManager_.recallScene (recall, params_);
+
+    const int seqCmd = pendingSeqCmd_.exchange (0);
+    if (seqCmd == 1)
+        stepSeq_.start();
+    else if (seqCmd == 2)
+        stepSeq_.stop();
+
+    const int masterCmd = pendingMasterCmd_.exchange (0);
+    if (masterCmd == 1)
+    {
+        stepSeq_.start();
+        // Launch Torso tracks directly; Sampler tracks are left to the sequencer's step trigs.
+        for (int t = 0; t < kNumTracks; ++t)
+            if (params_.effective (t, ParameterId::MaterialMachine) <= 0.5f)
+                tracks_[static_cast<size_t> (t)].trigger();
+    }
+    else if (masterCmd == 2)
+    {
+        stepSeq_.stop();
+        for (auto& tr : tracks_)
+            tr.stop();
+    }
+}
+
+// ---- Step sequencer ----------------------------------------------------------
+
+void Engine::masterPlay() { pendingMasterCmd_.store (1, std::memory_order_relaxed); }
+void Engine::masterStop() { pendingMasterCmd_.store (2, std::memory_order_relaxed); }
+
+void Engine::startSequencer() { pendingSeqCmd_.store (1, std::memory_order_relaxed); }
+void Engine::stopSequencer()  { pendingSeqCmd_.store (2, std::memory_order_relaxed); }
+
+void Engine::toggleStepTrig (int track, int step) { patternMgr_.current().toggleTrig (track, step); }
+void Engine::setStepTrig (int track, int step, bool on) { patternMgr_.current().setTrig (track, step, on); }
+bool Engine::getStepTrig (int track, int step) const { return patternMgr_.current().hasTrig (track, step); }
+void Engine::setCurrentPatternIndex (int idx) { patternMgr_.setCurrentIndex (idx); }
+
+// Fire trigs for any step boundaries crossed this chunk, on Sampler-machine tracks only.
+void Engine::advanceStepSequencer (double samplesPerBeat, int numSamples)
+{
+    if (! stepSeq_.isPlaying())
+        return;
+
+    int steps[StepSequencer::kMaxStepsPerBlock];
+    const int n = stepSeq_.advance (samplesPerBeat, numSamples, steps, StepSequencer::kMaxStepsPerBlock);
+    if (n <= 0)
+        return;
+
+    const Pattern& pat = patternMgr_.current();
+    for (int i = 0; i < n; ++i)
+    {
+        const int step = steps[i];
+        for (int t = 0; t < kNumTracks; ++t)
+        {
+            if (! pat.hasTrig (t, step))
+                continue;
+            // Sequencer drives only Sampler-machine tracks; Torso tracks free-run independently.
+            if (params_.effective (t, ParameterId::MaterialMachine) <= 0.5f)
+                continue;
+            // Re-fire from the loop start (Phase 4 p-locks will pass a per-step start position here).
+            tracks_[static_cast<size_t> (t)].requestSamplerTrig (-1.0f);
+        }
+    }
 }
 
 // ---- Capture / host bridge ---------------------------------------------------
@@ -515,6 +601,9 @@ void Engine::processChunk (float** inputs, float** outputs,
     granularTiming.samplesPerBeat = sampleRate_ * 60.0 / bpmUse;
     granularTiming.hostPlaying    = transport_.isPlaying();
 
+    // Step sequencer fires Sampler-track trigs for any step boundaries inside this chunk.
+    advanceStepSequencer (granularTiming.samplesPerBeat, numSamples);
+
     for (int t = 0; t < kNumTracks; ++t)
     {
         const auto ts = static_cast<size_t> (t);
@@ -536,7 +625,8 @@ void Engine::processChunk (float** inputs, float** outputs,
         busLPtrs[t] = busL_[ts].data();
         busRPtrs[t] = busR_[ts].data();
 
-        mixer_.setTrackLevel (t, params_.effective (t, ParameterId::TrackLevel));
+        const bool muted = trackMuted_[ts].load (std::memory_order_relaxed);
+        mixer_.setTrackLevel (t, muted ? 0.0f : params_.effective (t, ParameterId::TrackLevel));
         mixer_.setTrackPan (t, params_.effective (t, ParameterId::TrackPan));
     }
 
@@ -568,6 +658,10 @@ void Engine::updateScreenModel()
     screen_.selectedTrack = getSelectedTrack();
     screen_.currentScene  = sceneManager_.getCurrentSceneIndex();
     screen_.selectedPage  = selectedPage_;
+
+    screen_.seqPlaying      = stepSeq_.isPlaying();
+    screen_.seqCurrentStep  = stepSeq_.currentStep();
+    screen_.seqPatternIndex = patternMgr_.getCurrentIndex();
 
     for (int t = 0; t < kNumTracks; ++t)
     {

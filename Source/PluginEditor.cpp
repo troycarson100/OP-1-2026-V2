@@ -58,20 +58,60 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
         select.setButtonText ("TRK " + juce::String (t + 1));
         select.setClickingTogglesState (false);
         select.setColour (juce::TextButton::buttonOnColourId, kAccent);
-        select.onClick = [this, t] { selectTrack (t); };
-        addAndMakeVisible (select);
-
-        auto& play = playButtons_[static_cast<size_t> (t)];
-        play.setButtonText ("PLAY");
-        play.onClick = [this, t]
+        select.onClick = [this, t]
         {
-            auto& engine = processor_.getEngine();
-            if (engine.getScreenModel().trackPlaying[static_cast<size_t> (t)])
-                engine.stopTrack (t);
+            // In mute mode the track buttons toggle mute; otherwise they select the track.
+            if (muteMode_)
+                processor_.getEngine().toggleTrackMuted (t);
             else
-                engine.triggerTrack (t);
+                selectTrack (t);
         };
-        addAndMakeVisible (play);
+        addAndMakeVisible (select);
+    }
+
+    // MUTE arm button (reddish). Arm it, then click tracks to toggle their mute.
+    muteButton_.setClickingTogglesState (true);
+    muteButton_.setColour (juce::TextButton::buttonOnColourId, kMute);
+    muteButton_.setTooltip ("Arm mute, then click tracks to mute/unmute them (muted tracks show red).");
+    muteButton_.onClick = [this] { muteMode_ = muteButton_.getToggleState(); };
+    addAndMakeVisible (muteButton_);
+
+    // --- Step sequencer row ---
+    seqPlayButton_.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    seqPlayButton_.setTooltip ("Master transport: starts the sequencer and launches all Torso tracks at once; "
+                               "stop halts the sequencer and all tracks. Per-track PLAY still works individually.");
+    seqPlayButton_.onClick = [this]
+    {
+        auto& engine = processor_.getEngine();
+        if (engine.isSequencerPlaying())
+            engine.masterStop();
+        else
+            engine.masterPlay();
+    };
+    addAndMakeVisible (seqPlayButton_);
+
+    machineButton_.setColour (juce::TextButton::buttonOnColourId, kAccent);
+    machineButton_.setTooltip ("Selected track machine: TORSO (free-run tape/granular) or SAMP (sequencer-driven sampler).");
+    machineButton_.onClick = [this] { toggleSelectedMachine(); };
+    addAndMakeVisible (machineButton_);
+
+    stepPageButton_.setTooltip ("Toggle the step buttons between steps 1-16 and 17-32.");
+    stepPageButton_.onClick = [this] { toggleStepPage(); };
+    addAndMakeVisible (stepPageButton_);
+
+    for (int i = 0; i < sculpt::kStepsPerPage; ++i)
+    {
+        auto& b = stepButtons_[static_cast<size_t> (i)];
+        b.setButtonText (juce::String (i + 1));
+        b.setClickingTogglesState (false);
+        b.setColour (juce::TextButton::buttonOnColourId, kAccent);
+        b.onClick = [this, i]
+        {
+            const int step  = stepPage_ * sculpt::kStepsPerPage + i;
+            const int track = getSelectedTrackFromParameter();
+            processor_.getEngine().toggleStepTrig (track, step);
+        };
+        addAndMakeVisible (b);
     }
 
     for (int pg = 0; pg < static_cast<int> (sculpt::Page::Count); ++pg)
@@ -205,6 +245,37 @@ void SculptSamplerAudioProcessorEditor::selectTrack (int trackIndex)
     }
 }
 
+void SculptSamplerAudioProcessorEditor::toggleStepPage()
+{
+    stepPage_ = stepPage_ == 0 ? 1 : 0;
+    stepPageButton_.setButtonText (stepPage_ == 0 ? "1-16" : "17-32");
+    for (int i = 0; i < sculpt::kStepsPerPage; ++i)
+        stepButtons_[static_cast<size_t> (i)].setButtonText (
+            juce::String (stepPage_ * sculpt::kStepsPerPage + i + 1));
+}
+
+void SculptSamplerAudioProcessorEditor::toggleSelectedMachine()
+{
+    const int track = getSelectedTrackFromParameter();
+    const auto pid  = bridge::paramIdString (track, sculpt::ParameterId::MaterialMachine);
+    auto* p = processor_.getValueTreeState().getParameter (pid);
+    if (p == nullptr)
+        return;
+
+    const bool nowSampler = ! (p->getValue() > 0.5f);
+    p->beginChangeGesture();
+    p->setValueNotifyingHost (nowSampler ? 1.0f : 0.0f);
+    p->endChangeGesture();
+
+    // Make the change audible immediately: a Sampler track is silent until the sequencer trigs it;
+    // switching back to Torso restores the free-running voice.
+    auto& engine = processor_.getEngine();
+    if (nowSampler)
+        engine.stopTrack (track);
+    else
+        engine.triggerTrack (track);
+}
+
 void SculptSamplerAudioProcessorEditor::selectPage (sculpt::Page page)
 {
     currentPage_ = page;
@@ -333,7 +404,32 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
     {
         const auto ts = static_cast<size_t> (t);
         trackButtons_[ts].setToggleState (t == track, juce::dontSendNotification);
-        playButtons_[ts].setButtonText (screen.trackPlaying[ts] ? "STOP" : "PLAY");
+        // Muted tracks show red; selected (toggle-on) shows the accent and takes visual precedence.
+        const bool muted = processor_.getEngine().isTrackMuted (t);
+        trackButtons_[ts].setColour (juce::TextButton::buttonColourId,
+                                     muted ? sculpt_editor::kMute
+                                           : sculpt_editor::kBackground.brighter (0.15f));
+    }
+
+    // Step sequencer row.
+    seqPlayButton_.setToggleState (screen.seqPlaying, juce::dontSendNotification);
+    seqPlayButton_.setButtonText (screen.seqPlaying ? "STOP ALL" : "PLAY ALL");
+
+    bool selSampler = false;
+    if (auto* mp = processor_.getValueTreeState().getParameter (
+            bridge::paramIdString (track, sculpt::ParameterId::MaterialMachine)))
+        selSampler = mp->getValue() > 0.5f;
+    machineButton_.setToggleState (selSampler, juce::dontSendNotification);
+    machineButton_.setButtonText (selSampler ? "SAMP" : "TORSO");
+
+    for (int i = 0; i < sculpt::kStepsPerPage; ++i)
+    {
+        const int step = stepPage_ * sculpt::kStepsPerPage + i;
+        auto& b = stepButtons_[static_cast<size_t> (i)];
+        b.setToggleState (processor_.getEngine().getStepTrig (track, step), juce::dontSendNotification);
+        const bool current = screen.seqPlaying && screen.seqCurrentStep == step;
+        b.setColour (juce::TextButton::buttonColourId,
+                     current ? sculpt_editor::kMeter : sculpt_editor::kBackground.brighter (0.15f));
     }
 
     for (int pg = 0; pg < static_cast<int> (sculpt::Page::Count); ++pg)
@@ -394,12 +490,26 @@ void SculptSamplerAudioProcessorEditor::resized()
     const int actionH = 44;
     const int trackH = 68;
     const int deviceH = 32;
+    const int seqH = 30;
 
     auto actionRow = area.removeFromBottom (actionH);
     auto trackRow = area.removeFromBottom (trackH);
     auto deviceRow = area.removeFromBottom (deviceH);
+    area.removeFromBottom (6);
+    auto seqRow = area.removeFromBottom (seqH);
 
     area.removeFromBottom (8);
+
+    // Step sequencer row: transport + machine + page toggle on the left, 16 step buttons on the right.
+    seqPlayButton_.setBounds (seqRow.removeFromLeft (76).reduced (2, 3));
+    machineButton_.setBounds (seqRow.removeFromLeft (74).reduced (2, 3));
+    stepPageButton_.setBounds (seqRow.removeFromLeft (56).reduced (2, 3));
+    seqRow.removeFromLeft (6);
+    {
+        const int stepCell = juce::jmax (1, seqRow.getWidth() / sculpt::kStepsPerPage);
+        for (int i = 0; i < sculpt::kStepsPerPage; ++i)
+            stepButtons_[static_cast<size_t> (i)].setBounds (seqRow.removeFromLeft (stepCell).reduced (1, 3));
+    }
 
     const int pageBtnW = deviceRow.getWidth() / static_cast<int> (sculpt::Page::Count);
     for (int pg = 0; pg < static_cast<int> (sculpt::Page::Count); ++pg)
@@ -407,12 +517,10 @@ void SculptSamplerAudioProcessorEditor::resized()
 
     const int trackCell = trackRow.getWidth() / sculpt::kNumTracks;
     for (int t = 0; t < sculpt::kNumTracks; ++t)
-    {
-        auto cell = trackRow.removeFromLeft (trackCell).reduced (4);
-        trackButtons_[static_cast<size_t> (t)].setBounds (cell.removeFromTop (34));
-        playButtons_[static_cast<size_t> (t)].setBounds (cell.reduced (6, 2));
-    }
+        trackButtons_[static_cast<size_t> (t)].setBounds (trackRow.removeFromLeft (trackCell).reduced (3));
 
+    muteButton_.setBounds (actionRow.removeFromLeft (70).reduced (0, 6));
+    actionRow.removeFromLeft (6);
     loadSampleButton_.setBounds (actionRow.removeFromLeft (88).reduced (0, 6));
     spaceClearButton_.setBounds (actionRow.removeFromLeft (100).reduced (0, 6));
     helpLabel_.setBounds (actionRow.reduced (8, 6));
