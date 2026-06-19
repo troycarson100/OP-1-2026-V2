@@ -6,6 +6,7 @@
 #include "SpaceDelay.h"
 #include "HallReverb.h"
 #include "../util/Constants.h"
+#include "../util/SmoothedValue.h"
 
 namespace sculpt
 {
@@ -48,6 +49,10 @@ private:
 
     float delayAmt_ = 0.0f;
     float revAmt_   = 0.0f;
+    // Per-sample-smoothed wet mix gains so abrupt amount changes (e.g. a per-step p-lock) ramp
+    // instead of stepping the wet level mid-tail (which clicks).
+    SmoothedValue delayWetGainSm_;
+    SmoothedValue reverbWetGainSm_;
 
     float delayWet01_  = 0.0f;
     float reverbWet01_ = 0.0f;

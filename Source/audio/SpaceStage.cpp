@@ -14,6 +14,10 @@ void SpaceStage::prepare (double sampleRate)
     sampleRate_ = sampleRate > 1.0e-6 ? sampleRate : 44100.0;
     delay_.prepare (sampleRate_);
     reverb_.prepare (sampleRate_);
+    delayWetGainSm_.prepare (sampleRate_, 0.015f);  // ~15 ms wet-mix ramp (declick p-lock jumps)
+    reverbWetGainSm_.prepare (sampleRate_, 0.015f);
+    delayWetGainSm_.snap (0.0f);
+    reverbWetGainSm_.snap (0.0f);
     reset();
 }
 
@@ -97,14 +101,18 @@ void SpaceStage::process (float* left, float* right, int numSamples)
 
     reverb_.processBlock (monoRv_.data(), wetRL_.data(), wetRR_.data(), n);
 
-    const float dLin = delayAmt_ * delayAmt_ * 1.15f;
-    const float rLin = revAmt_ * revAmt_ * 1.15f;
+    // Targets for the wet mix gains; smoothed per sample below so amount jumps don't click.
+    delayWetGainSm_.setTarget  (delayAmt_ * delayAmt_ * 1.15f);
+    reverbWetGainSm_.setTarget (revAmt_   * revAmt_   * 1.15f);
 
     float delayPeak  = 0.0f;
     float reverbPeak = 0.0f;
 
     for (int i = 0; i < n; ++i)
     {
+        const float dLin = delayWetGainSm_.next();
+        const float rLin = reverbWetGainSm_.next();
+
         const float d  = dryL_[static_cast<size_t> (i)];
         const float e  = dryR_[static_cast<size_t> (i)];
         const float wL = wetDL_[static_cast<size_t> (i)];
