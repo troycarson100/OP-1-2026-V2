@@ -5,7 +5,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <limits>
+#include <type_traits>
 
 namespace sculpt
 {
@@ -212,6 +214,42 @@ void Engine::saveCurrentScene (int sceneIndex)
 void Engine::recallScene (int sceneIndex)
 {
     pendingSceneRecall_.store (sceneIndex);
+}
+
+// ---- Plugin state: portable performance blobs (message thread) ---------------
+
+static_assert (std::is_trivially_copyable<PatternManager>::value, "PatternManager must be memcpy-able");
+static_assert (std::is_trivially_copyable<SceneManager>::value,   "SceneManager must be memcpy-able");
+
+size_t Engine::patternStateBytes() const { return sizeof (PatternManager); }
+void   Engine::savePatternState (void* dst) const { std::memcpy (dst, &patternMgr_, sizeof (patternMgr_)); }
+void   Engine::loadPatternState (const void* src, size_t numBytes)
+{
+    if (numBytes == sizeof (patternMgr_))
+        std::memcpy (&patternMgr_, src, numBytes);
+}
+
+size_t Engine::sceneStateBytes() const { return sizeof (SceneManager); }
+void   Engine::saveSceneState (void* dst) const { std::memcpy (dst, &sceneManager_, sizeof (sceneManager_)); }
+void   Engine::loadSceneState (const void* src, size_t numBytes)
+{
+    if (numBytes == sizeof (sceneManager_))
+        std::memcpy (&sceneManager_, src, numBytes);
+}
+
+uint32_t Engine::getMuteMask() const
+{
+    uint32_t m = 0;
+    for (int t = 0; t < kNumTracks; ++t)
+        if (trackMuted_[static_cast<size_t> (t)].load (std::memory_order_relaxed))
+            m |= (1u << t);
+    return m;
+}
+
+void Engine::setMuteMask (uint32_t mask)
+{
+    for (int t = 0; t < kNumTracks; ++t)
+        trackMuted_[static_cast<size_t> (t)].store ((mask >> t) & 1u, std::memory_order_relaxed);
 }
 
 bool Engine::trackIsWarpMode (int trackIndex) const

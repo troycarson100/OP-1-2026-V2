@@ -424,6 +424,31 @@ void SculptSamplerAudioProcessor::getStateInformation (juce::MemoryBlock& destDa
         xml->setAttribute ("sculptModBlob", juce::Base64::toBase64 (raw.getData(), raw.getSize()));
         xml->setAttribute ("manualBpm", manualBpm_.load (std::memory_order_relaxed));
         xml->setAttribute ("manualTempoOverride", manualTempoOverride_.load (std::memory_order_relaxed) ? 1 : 0);
+
+        // Portable performance state (sequencer patterns + p-locks, scenes, mutes) — gzip'd because
+        // the raw pattern bank is ~1 MB of mostly-empty steps; compressed it's a few KB.
+        auto writeBlob = [&xml] (const juce::String& attr, const void* src, size_t bytes)
+        {
+            juce::MemoryBlock packed;
+            {
+                juce::MemoryOutputStream mos (packed, false);
+                juce::GZIPCompressorOutputStream gz (mos, 9);
+                gz.write (src, bytes);
+            }
+            xml->setAttribute (attr, juce::Base64::toBase64 (packed.getData(), packed.getSize()));
+            xml->setAttribute (attr + "Size", static_cast<int> (bytes));
+        };
+
+        std::vector<uint8_t> patBlob (engine_.patternStateBytes());
+        engine_.savePatternState (patBlob.data());
+        writeBlob ("sculptPatternBlob", patBlob.data(), patBlob.size());
+
+        std::vector<uint8_t> sceneBlob (engine_.sceneStateBytes());
+        engine_.saveSceneState (sceneBlob.data());
+        writeBlob ("sculptSceneBlob", sceneBlob.data(), sceneBlob.size());
+
+        xml->setAttribute ("sculptMuteMask", static_cast<int> (engine_.getMuteMask()));
+
         copyXmlToBinary (*xml, destData);
     }
 }
@@ -450,6 +475,33 @@ void SculptSamplerAudioProcessor::setStateInformation (const void* data, int siz
                 std::memcpy (&modPatch_, mos.getData(), sizeof (modPatch_));
             }
         }
+
+        // Restore portable performance state (patterns/p-locks, scenes) — decompress then memcpy
+        // back into the engine, but only if the saved raw size matches this build's layout.
+        auto readBlob = [&xml] (const juce::String& attr, std::vector<uint8_t>& out) -> bool
+        {
+            const juce::String b = xml->getStringAttribute (attr);
+            const int rawSize     = xml->getIntAttribute (attr + "Size", 0);
+            if (b.isEmpty() || rawSize <= 0)
+                return false;
+
+            juce::MemoryOutputStream packed;
+            if (! juce::Base64::convertFromBase64 (packed, b))
+                return false;
+
+            juce::MemoryInputStream in (packed.getData(), packed.getDataSize(), false);
+            juce::GZIPDecompressorInputStream gz (in);
+            out.assign (static_cast<size_t> (rawSize), 0);
+            return gz.read (out.data(), rawSize) == rawSize;
+        };
+
+        std::vector<uint8_t> blob;
+        if (readBlob ("sculptPatternBlob", blob))
+            engine_.loadPatternState (blob.data(), blob.size());
+        if (readBlob ("sculptSceneBlob", blob))
+            engine_.loadSceneState (blob.data(), blob.size());
+
+        engine_.setMuteMask (static_cast<uint32_t> (xml->getIntAttribute ("sculptMuteMask", 0)));
     }
 }
 

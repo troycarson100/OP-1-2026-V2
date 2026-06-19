@@ -241,8 +241,10 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     // Playhead follow: grains can track the moving tape position (GrainFollow).
     gp.playhead01 = getTapePositionNormalized();
     gp.follow     = get (ParameterId::GrainFollow);
-    gp.loopStart01        = loopLo;
-    gp.loopEnd01          = loopHi;
+    // Granulate the region the tape is actually playing (the slice in Slice mode, else the loop),
+    // so in Sampler mode grains track the current one-shot instead of the static loop knobs.
+    gp.loopStart01        = regionLo;
+    gp.loopEnd01          = regionHi;
     gp.grainPattern       = get (ParameterId::GrainPattern);
     gp.grainPatternAmount = get (ParameterId::GrainPatternAmount);
     gp.contour            = get (ParameterId::GrainContour);
@@ -250,14 +252,18 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     gp.randAmp            = get (ParameterId::GrainRandAmp);
     engine_.getGranular().setParams (gp);
     engine_.setGranularBlockTiming (granularTiming);
-    if (sampler)
-        // Sampler machine is tape-only; keep the granular cloud silent so trigs are clean one-shots.
-        engine_.setGrainMix (0.0f);
-    else if (materialPlayheadScrub)
+    if (materialPlayheadScrub)
         // Strong duck of granular layer while scanning; tape path does the scrubbing.
         engine_.snapGrainMix (gp.mix * 0.05f);
     else
         engine_.setGrainMix (gp.mix);
+
+    // Sampler machine: the granular cloud is part of the per-step voice, not a free-running drone.
+    // Spawn grains only while the one-shot is sounding; when the tape stops at the slice/loop end,
+    // stop spawning (in-flight grains finish naturally, leaving a granular tail). GrainMix blends it
+    // against the dry one-shot, so the cloud is fully usable — just gated to the hit.
+    if (sampler)
+        engine_.getGranular().setActive (tape.isPlaying());
 
     {
         const bool spectral = get (ParameterId::FilterMode) > 0.5f;

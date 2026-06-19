@@ -140,4 +140,13 @@ if(SCULPT_BUILD_TESTS)
         ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
     target_compile_features(sculpt_param_lock_tests PRIVATE cxx_std_17)
     add_test(NAME sculpt_param_lock COMMAND sculpt_param_lock_tests)
+
+    add_executable(sculpt_pattern_serialize_tests
+        tests/PatternSerializeTests.cpp)
+    target_include_directories(sculpt_pattern_serialize_tests PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/core
+        ${CMAKE_CURRENT_SOURCE_DIR}/Source/util)
+    target_compile_features(sculpt_pattern_serialize_tests PRIVATE cxx_std_17)
+    add_test(NAME sculpt_pattern_serialize COMMAND sculpt_pattern_serialize_tests)
 endif()

@@ -62,6 +62,18 @@ public:
     void saveCurrentScene (int sceneIndex);
     void recallScene (int sceneIndex);
 
+    // Plugin state (message thread). Portable performance data the host param tree doesn't cover:
+    // sequencer patterns (trigs + p-locks), scenes, and per-track mutes. Stored/restored as raw
+    // trivially-copyable blobs (the wrapper compresses them); load is a no-op on a size mismatch.
+    size_t   patternStateBytes() const;
+    void     savePatternState (void* dst) const;
+    void     loadPatternState (const void* src, size_t numBytes);
+    size_t   sceneStateBytes() const;
+    void     saveSceneState (void* dst) const;
+    void     loadSceneState (const void* src, size_t numBytes);
+    uint32_t getMuteMask() const;
+    void     setMuteMask (uint32_t mask);
+
     // Master transport: start the sequencer AND launch all Torso-machine tracks at once (Sampler
     // tracks are driven by the sequencer); stop halts the sequencer and all tracks. Latched.
     void masterPlay();
