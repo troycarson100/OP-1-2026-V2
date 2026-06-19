@@ -100,6 +100,8 @@ namespace bridge
             case P::MaterialLoopXfade:   suffix = "materialLoopXfade"; break;
             case P::MaterialGridDivision: suffix = "materialGridDivision"; break;
             case P::MaterialMachine: suffix = "materialMachine"; break;
+            case P::MaterialSampleMode: suffix = "materialSampleMode"; break;
+            case P::MaterialSliceCount: suffix = "materialSliceCount"; break;
             default: break;
         }
 

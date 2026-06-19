@@ -388,26 +388,30 @@ void Engine::applyPendingRequests()
     if (recall >= 0)
         sceneManager_.recallScene (recall, params_);
 
-    const int seqCmd = pendingSeqCmd_.exchange (0);
-    if (seqCmd == 1)
-        stepSeq_.start();
-    else if (seqCmd == 2)
-        stepSeq_.stop();
-
+    const int seqCmd    = pendingSeqCmd_.exchange (0);
     const int masterCmd = pendingMasterCmd_.exchange (0);
-    if (masterCmd == 1)
+    const bool startSeq = (seqCmd == 1) || (masterCmd == 1);
+    const bool stopSeq  = (seqCmd == 2) || (masterCmd == 2);
+
+    if (startSeq)
     {
         stepSeq_.start();
+        for (auto& tr : tracks_)
+            tr.resetSliceCursor(); // predictable slice order from step 0
+    }
+
+    if (masterCmd == 1)
         // Launch Torso tracks directly; Sampler tracks are left to the sequencer's step trigs.
         for (int t = 0; t < kNumTracks; ++t)
             if (params_.effective (t, ParameterId::MaterialMachine) <= 0.5f)
                 tracks_[static_cast<size_t> (t)].trigger();
-    }
-    else if (masterCmd == 2)
+
+    if (stopSeq)
     {
         stepSeq_.stop();
-        for (auto& tr : tracks_)
-            tr.stop();
+        if (masterCmd == 2)
+            for (auto& tr : tracks_)
+                tr.stop();
     }
 }
 

@@ -4,6 +4,7 @@
 #include "SampleRecorder.h"
 #include "TrackEngine.h"
 #include "Envelope.h"
+#include "SliceMap.h"
 
 namespace sculpt
 {
@@ -31,6 +32,9 @@ public:
     // start". Deferred to updateParameters so the seek uses the same snapped loop bounds the tape
     // gets this block. Phase 4 p-locks will pass a per-step start position here.
     void requestSamplerTrig (float pos01 = -1.0f) { samplerTrigPending_ = true; samplerTrigPos01_ = pos01; }
+
+    // Restart the round-robin slice cursor (called when the sequencer starts, for predictable patterns).
+    void resetSliceCursor() { sliceCursor_ = 0; }
 
     // Live input capture into the material buffer.
     void captureInput (const float* const* inputs, int numChannels, int numSamples);
@@ -78,6 +82,13 @@ private:
     // Pending sampler-machine trig from the step sequencer (applied in updateParameters).
     bool  samplerTrigPending_ = false;
     float samplerTrigPos01_   = -1.0f;
+
+    // Slice mode: round-robin cursor + the region the current one-shot is playing (a slice, persisted
+    // across blocks so the tape keeps the slice bounds between trigs instead of the loop knobs).
+    SliceMap sliceMap_;
+    int   sliceCursor_     = 0;
+    float samplerRegionLo_ = 0.0f;
+    float samplerRegionHi_ = 1.0f;
 };
 
 } // namespace sculpt

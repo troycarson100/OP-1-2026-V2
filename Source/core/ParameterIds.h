@@ -140,6 +140,12 @@ enum class ParameterId : int
     // end to avoid renumbering existing parameters / breaking saved state.
     MaterialMachine,
 
+    // Sampler playback mode: <=0.5 = OneShot (play the loop region once per trig); >0.5 = Slice
+    // (chop the sample into MaterialSliceCount equal slices and play one slice per step trig).
+    MaterialSampleMode,
+    // Slice count for Slice mode (mapped to a musical set 1..64 via map::materialSliceCount).
+    MaterialSliceCount,
+
     Count
 };
 
@@ -229,6 +235,8 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialGridDivision: return 0.8f;  // 1/16 (index 4 of 0..5)
         case ParameterId::GrainFollow:     return 0.0f;   // static position (legacy behavior)
         case ParameterId::MaterialMachine: return 1.0f;   // Sampler by default (silent until sequenced)
+        case ParameterId::MaterialSampleMode: return 0.0f; // OneShot by default
+        case ParameterId::MaterialSliceCount: return 0.667f; // 16 slices (index 4 of 1..64 set)
         case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -382,6 +390,14 @@ namespace map
     {
         const double sr = sampleRate > 1.0e-6 ? sampleRate : 44100.0;
         return static_cast<float> (0.005 * sr);
+    }
+
+    // Slice count for Sampler Slice mode: musical set 1..64 (7 steps).
+    inline int materialSliceCount (float n01)
+    {
+        static constexpr int kCounts[7] = { 1, 2, 4, 8, 16, 32, 64 };
+        const int idx = std::clamp (static_cast<int> (std::lround (clamp01 (n01) * 6.0f)), 0, 6);
+        return kCounts[idx];
     }
 
     // 16 curated grain choreography presets (see GrainPatternBank.h).
@@ -583,6 +599,8 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MaterialLoopXfade:   return "Cross Fade";
         case ParameterId::MaterialGridDivision: return "Grid Div";
         case ParameterId::MaterialMachine: return "Machine";
+        case ParameterId::MaterialSampleMode: return "Sample Mode";
+        case ParameterId::MaterialSliceCount: return "Slices";
         case ParameterId::LoopSnapGrid:    return "Loop Snap";
         default:                           return "Unknown";
     }

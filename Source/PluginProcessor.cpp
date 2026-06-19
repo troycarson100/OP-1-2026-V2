@@ -147,7 +147,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
                 else if (id == ParameterId::TapeSpeedSnap || id == ParameterId::LoopSnapGrid)
                     layout.add (std::make_unique<juce::AudioParameterBool> (
                         juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
-                else if (id == ParameterId::SpaceFreeze || id == ParameterId::MaterialMachine)
+                else if (id == ParameterId::SpaceFreeze || id == ParameterId::MaterialMachine
+                         || id == ParameterId::MaterialSampleMode)
                     layout.add (std::make_unique<juce::AudioParameterBool> (
                         juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
                 else if (id == ParameterId::SampleRootBpm)

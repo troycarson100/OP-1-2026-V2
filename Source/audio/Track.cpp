@@ -39,6 +39,10 @@ void Track::reset()
     engine_.reset();
     playing_                   = false;
     ignoreStoppedPlayheadSeek_ = false;
+    samplerTrigPending_        = false;
+    sliceCursor_               = 0;
+    samplerRegionLo_           = 0.0f;
+    samplerRegionHi_           = 1.0f;
 }
 
 void Track::trigger()
@@ -107,7 +111,8 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
 
     // Sampler machine: Digitakt-style voice. Plays the loop region once per step trig (one-shot, no
     // loop) and runs the tape only (granular cloud is silenced). Torso machine keeps looping + grains.
-    const bool sampler = get (ParameterId::MaterialMachine) > 0.5f;
+    const bool sampler   = get (ParameterId::MaterialMachine) > 0.5f;
+    const bool sliceMode = sampler && get (ParameterId::MaterialSampleMode) > 0.5f;
 
     setCaptureArmed (get (ParameterId::CaptureArm) > 0.5f);
 
@@ -153,10 +158,19 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
         map::snapLoopPair01 (loopLo, loopHi, map::materialGridStep01 (gridN, gridBpm, gDurSec));
     }
 
+    // In Slice mode the tape plays the persisted current-slice region (set on each trig), not the
+    // Loop Start/End knobs; OneShot/Torso use the loop region as before.
+    float regionLo = loopLo, regionHi = loopHi;
+    if (sliceMode)
+    {
+        regionLo = samplerRegionLo_;
+        regionHi = samplerRegionHi_;
+    }
+
     tape.setSpeedRatio (speedRatio);
-    tape.setLoopRegion (loopLo, loopHi);
+    tape.setLoopRegion (regionLo, regionHi);
     tape.setLevel (1.0f);
-    // Sampler = one-shot (stop at loop end); Torso = continuous loop.
+    // Sampler = one-shot (stop at loop/slice end); Torso = continuous loop.
     tape.setLoopMode (! sampler);
     const float xfadeSec = map::loopFadeSeconds (get (ParameterId::MaterialLoopXfade));
     tape.setLoopFades (xfadeSec, xfadeSec);
@@ -177,10 +191,27 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     // p-locked position) and re-fire from there, so every step restarts the sample cleanly.
     if (samplerTrigPending_)
     {
-        const float pos = samplerTrigPos01_ < 0.0f ? loopLo : std::clamp (samplerTrigPos01_, 0.0f, 1.0f);
+        float trigLo = loopLo, trigHi = loopHi, pos;
+        if (sliceMode)
+        {
+            // Advance the round-robin slice and play it once (Phase 4 p-locks will override the index).
+            sliceMap_.setCount (map::materialSliceCount (get (ParameterId::MaterialSliceCount)));
+            const int idx = sliceCursor_ % sliceMap_.count();
+            samplerRegionLo_ = sliceMap_.start01 (idx);
+            samplerRegionHi_ = sliceMap_.end01 (idx);
+            sliceCursor_     = (sliceCursor_ + 1) % sliceMap_.count();
+            trigLo = samplerRegionLo_;
+            trigHi = samplerRegionHi_;
+            pos    = trigLo;
+            tape.setLoopRegion (trigLo, trigHi); // apply the slice region for this one-shot now
+        }
+        else
+        {
+            pos = samplerTrigPos01_ < 0.0f ? loopLo : std::clamp (samplerTrigPos01_, 0.0f, 1.0f);
+        }
         // Crossfaded read-head jump (declick) rather than a hard seek; the gate just opens (it ramps
         // up from silence only when the track was stopped, so no level discontinuity either way).
-        tape.retrigger (pos, matFrames, loopLo, loopHi);
+        tape.retrigger (pos, matFrames, trigLo, trigHi);
         engine_.getGranular().setActive (true);
         gate_.gateOn();
         playing_                   = true;

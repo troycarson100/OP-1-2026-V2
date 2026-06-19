@@ -373,6 +373,23 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
                 control.slider->updateText();
                 spaceTimeSlider_ = control.slider.get();
             }
+            // Sampler controls: show readable values (mode name / slice count) instead of 0..1.
+            else if (id == sculpt::ParameterId::MaterialSampleMode)
+            {
+                control.slider->textFromValueFunction = [] (double value)
+                {
+                    return juce::String (value > 0.5 ? "Slice" : "1-Shot");
+                };
+                control.slider->updateText();
+            }
+            else if (id == sculpt::ParameterId::MaterialSliceCount)
+            {
+                control.slider->textFromValueFunction = [] (double value)
+                {
+                    return juce::String (sculpt::map::materialSliceCount (static_cast<float> (value)));
+                };
+                control.slider->updateText();
+            }
         }
 
         pageControls_.push_back (std::move (control));
