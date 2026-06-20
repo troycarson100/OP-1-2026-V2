@@ -43,6 +43,8 @@ void Track::reset()
     sliceCursor_               = 0;
     samplerRegionLo_           = 0.0f;
     samplerRegionHi_           = 1.0f;
+    followLoopStartLast_       = -1.0f;
+    followSeekPending_         = false;
 }
 
 void Track::trigger()
@@ -125,7 +127,7 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     float speedRatio = 0.0f;
     if (get (ParameterId::MaterialTimeMode) > 0.5f)
     {
-        float rootBpm = map::sampleRootBpm (get (ParameterId::SampleRootBpm));
+        float rootBpm = activeSampleRootBpm_;   // per-sample native tempo (pushed by Engine)
         if (rootBpm < 1.0e-3f)
             rootBpm = 120.0f;
 
@@ -147,10 +149,30 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     if (get (ParameterId::LoopSnapGrid) > 0.5f)
     {
         const int   gridN   = map::materialGridDivisions (get (ParameterId::MaterialGridDivision));
-        const float gridBpm = map::sampleRootBpm (get (ParameterId::SampleRootBpm));
+        const float gridBpm = activeSampleRootBpm_;   // per-sample native tempo (pushed by Engine)
         const int   gFrames = material_.getActiveBuffer().getNumFrames();
         const float gDurSec = engineSampleRate > 1.0e-6 ? static_cast<float> (gFrames / engineSampleRate) : 0.0f;
         map::snapLoopPair01 (loopLo, loopHi, map::materialGridStep01 (gridN, gridBpm, gDurSec));
+    }
+
+    // Loop Start Follow: detect when Loop Start has settled (stopped moving). followMovedThisBlock
+    // stays true while it's sweeping so we only snap the playhead once motion stops (after an
+    // automated / loop-snapped Loop Start lands on a new grid step), not every block mid-sweep.
+    const bool loopFollow = get (ParameterId::LoopStartFollow) > 0.5f;
+    bool followMovedThisBlock = false;
+    if (loopFollow)
+    {
+        if (std::fabs (loopLo - followLoopStartLast_) > 1.0e-4f)
+        {
+            followLoopStartLast_ = loopLo;
+            followSeekPending_   = true;
+            followMovedThisBlock = true;
+        }
+    }
+    else
+    {
+        followSeekPending_   = false;
+        followLoopStartLast_ = loopLo;
     }
 
     // In Slice mode the tape plays the persisted current-slice region (set on each trig), not the
@@ -212,6 +234,18 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
         playing_                   = true;
         ignoreStoppedPlayheadSeek_ = true;
         samplerTrigPending_        = false;
+        // The trig already placed the read head; don't let Follow also snap this resting position.
+        followSeekPending_   = false;
+        followLoopStartLast_ = loopLo;
+    }
+
+    // Loop Start Follow: once Loop Start has settled, snap the playing read head to it (declick
+    // crossfade jump). Skipped in Slice mode (the play region is the slice, not the loop knobs).
+    if (loopFollow && followSeekPending_ && ! followMovedThisBlock
+        && ! materialPlayheadScrub && ! sliceMode && playing_)
+    {
+        tape.retrigger (loopLo, matFrames, loopLo, loopHi);
+        followSeekPending_ = false;
     }
 
     GranularEngine::Params gp;

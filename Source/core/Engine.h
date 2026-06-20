@@ -118,7 +118,7 @@ public:
     int  addBankSample (const float* left, const float* right, int numFrames, const char* name);
 
     // State restore: place a sample into a specific absolute pool slot. Message thread only.
-    void loadBankSlot (int slot, const float* left, const float* right, int numFrames, const char* name);
+    void loadBankSlot (int slot, const float* left, const float* right, int numFrames, const char* name, float rootBpm);
 
     // Replace one track's OWN material buffer (placeholder/capture path, not the shared pool).
     void replaceTrackMaterialStereo (int trackIndex, const float* left, const float* right, int numFrames);
@@ -126,6 +126,12 @@ public:
     int         getBankSampleCount() const;
     const char* getBankSampleName (int slot) const;
     bool        isBankSampleLoaded (int slot) const;
+
+    // Per-sample native tempo for warp/sync. The active slot for a track is its effective Sample
+    // knob value; the Material Root BPM knob edits the active sample (message thread).
+    int   getActiveBankSlotForTrack (int trackIndex) const;
+    float getBankSampleRootBpm (int slot) const;
+    void  setBankSampleRootBpm (int slot, float bpm);
 
     // Host bridge inputs (values only - no host types).
     void setHostTempo (double bpm);
@@ -165,6 +171,8 @@ private:
     float materialWaveCenter01 (int trackIndex) const;
     // Normalized loop-snap grid step for a track (tempo note value / buffer duration).
     float gridStep01ForTrack (int trackIndex) const;
+    // Active sample's native tempo for a track (warp/sync), or 120 when no sample is loaded.
+    float activeSampleRootBpmForTrack (int trackIndex) const;
 
     void applyPendingRequests();
     void fireWarpLaunchDeadlines (double beatAtBlockStart);

@@ -305,6 +305,7 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
 
     pageControls_.clear();
     spaceTimeSlider_ = nullptr;
+    rootBpmSlider_   = nullptr;
     auto& apvts = processor_.getValueTreeState();
     const int track = getSelectedTrackFromParameter();
     lastBuiltTrack_ = track;
@@ -371,14 +372,55 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
             addAndMakeVisible (*control.label);
 
             const auto paramId = bridge::paramIdString (track, id);
-            if (apvts.getParameter (paramId) != nullptr)
+            // Root BPM is a per-SAMPLE property (stored in the bank), not a track param: drive it
+            // manually so the knob edits whichever sample is active on this track.
+            if (id == sculpt::ParameterId::SampleRootBpm)
+            {
+                control.slider->setRange (0.0, 1.0, 0.0);
+                control.slider->setTextBoxStyle (juce::Slider::TextBoxBelow, false, 48, 14);
+                control.slider->textFromValueFunction = [] (double value)
+                {
+                    return juce::String (juce::roundToInt (sculpt::map::sampleRootBpm (static_cast<float> (value))));
+                };
+                auto* sp = control.slider.get();
+                control.slider->onValueChange = [this, sp]
+                {
+                    const int track2 = getSelectedTrackFromParameter();
+                    const float bpm = sculpt::map::sampleRootBpm (static_cast<float> (sp->getValue()));
+                    processor_.setActiveSampleRootBpm (track2, bpm);
+                };
+                const auto& screen = processor_.getEngine().getScreenModel();
+                control.slider->setValue (sculpt::map::sampleRootBpmToNorm (screen.materialSampleRootBpm),
+                                          juce::dontSendNotification);
+                control.slider->updateText();
+                rootBpmSlider_ = control.slider.get();
+            }
+            else if (apvts.getParameter (paramId) != nullptr)
                 control.attachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
                     apvts, paramId, *control.slider);
+
+            // Loop Start cell gets a small "Follow" toggle (snap playhead to Loop Start when it settles).
+            if (id == sculpt::ParameterId::LoopStart)
+            {
+                control.followToggle = std::make_unique<juce::ToggleButton> ("Follow");
+                control.followToggle->setClickingTogglesState (true);
+                control.followToggle->setColour (juce::ToggleButton::textColourId, kText);
+                control.followToggle->setColour (juce::ToggleButton::tickColourId, kAccent);
+                control.followToggle->setTooltip ("When Loop Start stops moving, snap the playhead to it.");
+                addAndMakeVisible (*control.followToggle);
+                const auto followId = bridge::paramIdString (track, sculpt::ParameterId::LoopStartFollow);
+                if (apvts.getParameter (followId) != nullptr)
+                    control.followAttachment =
+                        std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment> (
+                            apvts, followId, *control.followToggle);
+            }
 
             // P-lock editing: while a step is targeted in P-LOCK mode the knob is detached from the
             // live param (see enterLockEdit), so turning it writes/updates this step's lock only.
             // Locks store the parameter's normalized 0..1 value (convertTo0to1 handles choice/stepped
-            // params whose slider range isn't 0..1).
+            // params whose slider range isn't 0..1). Root BPM is per-sample (not p-lockable), so it
+            // keeps its own onValueChange handler.
+            if (id != sculpt::ParameterId::SampleRootBpm)
             {
                 auto* sliderPtr = control.slider.get();
                 control.slider->onValueChange = [this, id, sliderPtr]
@@ -443,6 +485,9 @@ void SculptSamplerAudioProcessorEditor::enterLockEdit()
     {
         if (pc.slider == nullptr)
             continue;
+        // Root BPM is per-sample (not p-lockable); it keeps its own mirror, never edits step locks.
+        if (pc.id == sculpt::ParameterId::SampleRootBpm)
+            continue;
 
         // Detach from the live parameter so edits only touch the step's lock, not the live value.
         pc.attachment.reset();
@@ -478,6 +523,16 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
     {
         spaceTimeModeIdx_ = screen.space.delayTimeMode;
         spaceTimeSlider_->updateText();
+    }
+
+    // Root BPM knob mirrors the ACTIVE sample's stored BPM (per-sample property). Update it when the
+    // user isn't dragging it, so changing the Sample knob / track shows that sample's tempo.
+    if (rootBpmSlider_ != nullptr && currentPage_ == sculpt::Page::Material
+        && ! rootBpmSlider_->isMouseButtonDown())
+    {
+        const float target = sculpt::map::sampleRootBpmToNorm (screen.materialSampleRootBpm);
+        if (std::abs (static_cast<float> (rootBpmSlider_->getValue()) - target) > 1.0e-4f)
+            rootBpmSlider_->setValue (target, juce::dontSendNotification);
     }
 
     for (int t = 0; t < sculpt::kNumTracks; ++t)
@@ -540,6 +595,9 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
                 // have no per-step effective value to follow; leave their knobs on the live value.
                 if (! sculpt::isTrackParameter (pc.id))
                     continue;
+                // Root BPM is a per-sample property driven by its own mirror, not the track param.
+                if (pc.id == sculpt::ParameterId::SampleRootBpm)
+                    continue;
                 const float eff = processor_.getEngine().getEffectiveTrackParameter (track, pc.id);
                 float natural = eff;
                 if (auto* p = apvts3.getParameter (bridge::paramIdString (track, pc.id)))
@@ -555,7 +613,7 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
             knobsFollowing_ = false;
             if (! lockEditing)
                 for (auto& pc : pageControls_)
-                    if (pc.slider != nullptr)
+                    if (pc.slider != nullptr && pc.id != sculpt::ParameterId::SampleRootBpm)
                         if (auto* p = apvts3.getParameter (bridge::paramIdString (track, pc.id)))
                             pc.slider->setValue (p->convertFrom0to1 (p->getValue()), juce::dontSendNotification);
         }
@@ -705,12 +763,13 @@ void SculptSamplerAudioProcessorEditor::resized()
                                    cellWidth, cellHeight);
         cell = cell.reduced (8);
         pageControls_[i].label->setBounds (cell.removeFromBottom (16));
+        // Follow toggle sits as a small strip at the top of the Loop Start cell, above the knob.
+        if (pageControls_[i].followToggle != nullptr)
+            pageControls_[i].followToggle->setBounds (cell.removeFromTop (16));
         if (pageControls_[i].slider != nullptr)
             pageControls_[i].slider->setBounds (cell);
         else if (pageControls_[i].spaceFreezeToggle != nullptr)
             pageControls_[i].spaceFreezeToggle->setBounds (cell.reduced (6, 10));
-        else if (pageControls_[i].loopSnapToggle != nullptr)
-            pageControls_[i].loopSnapToggle->setBounds (cell.reduced (6, 10));
     }
 }
 

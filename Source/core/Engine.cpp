@@ -2,6 +2,7 @@
 #include "../audio/GranularEngine.h"
 #include "../audio/WarpLaunchSync.h"
 #include "../util/MathUtils.h"
+#include "../util/BpmFromName.h"
 
 #include <algorithm>
 #include <cmath>
@@ -129,8 +130,8 @@ float Engine::gridStep01ForTrack (int trackIndex) const
 {
     const int ti = trackIndex < 0 ? 0 : (trackIndex >= kNumTracks ? kNumTracks - 1 : trackIndex);
     const int   N   = map::materialGridDivisions (params_.effective (ti, ParameterId::MaterialGridDivision));
-    const float bpm = map::sampleRootBpm (params_.effective (ti, ParameterId::SampleRootBpm));
-    const int   frames = tracks_[static_cast<size_t> (ti)].getMaterial().getBuffer().getNumFrames();
+    const float bpm = activeSampleRootBpmForTrack (ti);
+    const int   frames = tracks_[static_cast<size_t> (ti)].getMaterial().getActiveBuffer().getNumFrames();
     const float dur = sampleRate_ > 1.0e-6 ? static_cast<float> (frames / sampleRate_) : 0.0f;
     return map::materialGridStep01 (N, bpm, dur);
 }
@@ -289,7 +290,7 @@ int Engine::findReferenceWarpPlayingTrack (int excludeTrack) const
 float Engine::warpEffectiveSpeedRatio (int trackIndex) const
 {
     const double hostBpm = clock_.getBpm();
-    float        rootBpm = map::sampleRootBpm (params_.effective (trackIndex, ParameterId::SampleRootBpm));
+    float        rootBpm = activeSampleRootBpmForTrack (trackIndex);
     if (rootBpm < 1.0e-3f)
         rootBpm = 120.0f;
     const float       tapeKnob   = params_.effective (trackIndex, ParameterId::TapeSpeed);
@@ -337,10 +338,10 @@ void Engine::executeWarpLaunchForTrack (int trackIndex, double targetHostBeat)
     const double hostBpm = clock_.getBpm();
     float        loopS   = params_.effective (trackIndex, ParameterId::LoopStart);
     float        loopE   = params_.effective (trackIndex, ParameterId::LoopEnd);
-    const int    frames  = trk.getMaterial().getBuffer().getNumFrames();
+    const int    frames  = trk.getMaterial().getActiveBuffer().getNumFrames();
     if (params_.effective (trackIndex, ParameterId::LoopSnapGrid) > 0.5f)
         map::snapLoopPair01 (loopS, loopE, gridStep01ForTrack (trackIndex));
-    float        rootBpm = map::sampleRootBpm (params_.effective (trackIndex, ParameterId::SampleRootBpm));
+    float        rootBpm = activeSampleRootBpmForTrack (trackIndex);
     if (rootBpm < 1.0e-3f)
         rootBpm = 120.0f;
 
@@ -570,12 +571,20 @@ void Engine::setCaptureArmed (int trackIndex, bool armed)
 
 int Engine::addBankSample (const float* left, const float* right, int numFrames, const char* name)
 {
-    return sampleBank_.addSample (left, right, numFrames, name);
+    // Prefer an explicit BPM in the filename (authoritative); fall back to a duration estimate.
+    float rootBpm = parseBpmFromFilename (name);
+    if (rootBpm <= 0.0f)
+    {
+        const float durSec = (sampleRate_ > 1.0e-6) ? static_cast<float> (numFrames / sampleRate_) : 0.0f;
+        rootBpm = map::estimateSampleRootBpm (durSec);
+    }
+    rootBpm = std::clamp (rootBpm, 40.0f, 240.0f);
+    return sampleBank_.addSample (left, right, numFrames, name, rootBpm);
 }
 
-void Engine::loadBankSlot (int slot, const float* left, const float* right, int numFrames, const char* name)
+void Engine::loadBankSlot (int slot, const float* left, const float* right, int numFrames, const char* name, float rootBpm)
 {
-    sampleBank_.loadSlot (slot, left, right, numFrames, name);
+    sampleBank_.loadSlot (slot, left, right, numFrames, name, rootBpm);
 }
 
 void Engine::replaceTrackMaterialStereo (int trackIndex, const float* left, const float* right, int numFrames)
@@ -587,6 +596,26 @@ void Engine::replaceTrackMaterialStereo (int trackIndex, const float* left, cons
 int         Engine::getBankSampleCount() const          { return sampleBank_.count(); }
 const char* Engine::getBankSampleName (int slot) const  { return sampleBank_.getName (slot); }
 bool        Engine::isBankSampleLoaded (int slot) const { return sampleBank_.isLoaded (slot); }
+float       Engine::getBankSampleRootBpm (int slot) const { return sampleBank_.getRootBpm (slot); }
+void        Engine::setBankSampleRootBpm (int slot, float bpm) { sampleBank_.setRootBpm (slot, bpm); }
+
+int Engine::getActiveBankSlotForTrack (int trackIndex) const
+{
+    if (trackIndex < 0 || trackIndex >= kNumTracks)
+        return -1;
+    if (sampleBank_.count() <= 0)
+        return -1;
+    const float slotN = params_.effective (trackIndex, ParameterId::MaterialSampleSlot);
+    return map::materialSampleSlot (slotN, std::max (1, sampleBank_.count()));
+}
+
+float Engine::activeSampleRootBpmForTrack (int trackIndex) const
+{
+    const int slot = getActiveBankSlotForTrack (trackIndex);
+    if (slot < 0 || ! sampleBank_.isLoaded (slot))
+        return 120.0f;
+    return sampleBank_.getRootBpm (slot);
+}
 
 void Engine::setHostTempo (double bpm)       { clock_.setBpm (bpm); }
 void Engine::setHostPlaying (bool playing)   { transport_.setPlaying (playing); }
@@ -732,6 +761,9 @@ void Engine::processChunk (float** inputs, float** outputs,
             const float slotN = params_.effective (t, ParameterId::MaterialSampleSlot);
             const int   slotIdx = map::materialSampleSlot (slotN, std::max (1, sampleBank_.count()));
             track.setExternalSampleBuffer (sampleBank_.getBuffer (slotIdx));
+            // Warp/sync uses the active sample's native tempo (per-sample, not per-track), so a
+            // p-locked sample swap on a step automatically syncs to that sample's own BPM.
+            track.setActiveSampleRootBpm (activeSampleRootBpmForTrack (t));
         }
 
         const bool playheadScrub = materialPlayheadScrubActive_[ts].load (std::memory_order_relaxed);
@@ -946,7 +978,7 @@ void Engine::updateScreenModel()
         screen_.materialLoopFadeOut01 = frac;
         screen_.materialGridStepSec = map::materialGridDivisionSeconds (
             map::materialGridDivisions (params_.effective (selected, ParameterId::MaterialGridDivision)),
-            map::sampleRootBpm (params_.effective (selected, ParameterId::SampleRootBpm)));
+            activeSampleRootBpmForTrack (selected));
     }
 
     const int matFrames = matBuf.getNumFrames();
@@ -986,9 +1018,9 @@ void Engine::updateScreenModel()
     }
     screen_.numVisibleParams = visible;
 
+    screen_.materialSampleRootBpm = activeSampleRootBpmForTrack (selected);
     screen_.rootBpmWhole =
-        static_cast<int> (std::lround (static_cast<double> (
-            map::sampleRootBpm (params_.effective (selected, ParameterId::SampleRootBpm)))));
+        static_cast<int> (std::lround (static_cast<double> (screen_.materialSampleRootBpm)));
 
     // Spectral filter band display for the Filter page.
     const bool spectral = params_.effective (selected, ParameterId::FilterMode) > 0.5f;

@@ -152,7 +152,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
                     addChoiceParam (layout, pid, pname, modeChoices, id);
                 else if (id == ParameterId::SpaceDelayTimeMode)
                     addChoiceParam (layout, pid, pname, spaceTimeModeChoices, id);
-                else if (id == ParameterId::TapeSpeedSnap || id == ParameterId::LoopSnapGrid)
+                else if (id == ParameterId::TapeSpeedSnap || id == ParameterId::LoopSnapGrid
+                         || id == ParameterId::LoopStartFollow)
                     layout.add (std::make_unique<juce::AudioParameterBool> (
                         juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
                 else if (id == ParameterId::SpaceFreeze || id == ParameterId::MaterialMachine
@@ -413,6 +414,13 @@ void SculptSamplerAudioProcessor::pointTrackAtBankSlot (int trackIndex, int slot
         ? static_cast<float> (slot) / static_cast<float> (count - 1) : 0.0f;
     if (auto* p = apvts_.getParameter (bridge::paramIdString (trackIndex, sculpt::ParameterId::MaterialSampleSlot)))
         p->setValueNotifyingHost (slotNorm);
+}
+
+void SculptSamplerAudioProcessor::setActiveSampleRootBpm (int trackIndex, float bpm)
+{
+    const int slot = engine_.getActiveBankSlotForTrack (trackIndex);
+    if (slot >= 0)
+        engine_.setBankSampleRootBpm (slot, bpm);
 }
 
 bool SculptSamplerAudioProcessor::loadAudioFileIntoTrack (int trackIndex, const juce::File& file)

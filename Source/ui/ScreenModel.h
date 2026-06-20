@@ -135,6 +135,8 @@ struct ScreenModel
     char materialSampleName[64] {};
     // Number of samples loaded into the project bank (the Sample knob only scans these).
     int  bankSampleCount = 0;
+    // Active sample's native tempo on the selected track (warp/sync). The Root BPM knob edits this.
+    float materialSampleRootBpm = 120.0f;
 
     // Material waveform: total length (seconds) and horizontal view window across the buffer.
     float materialDurationSec = 0.0f;

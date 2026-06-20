@@ -7,7 +7,7 @@
 namespace sculpt
 {
 
-void SampleBank::loadSlot (int slot, const float* left, const float* right, int numFrames, const char* name)
+void SampleBank::loadSlot (int slot, const float* left, const float* right, int numFrames, const char* name, float rootBpm)
 {
     if (slot < 0 || slot >= kMaxSamples || numFrames < 1 || left == nullptr)
         return;
@@ -23,19 +23,34 @@ void SampleBank::loadSlot (int slot, const float* left, const float* right, int 
     }
     std::strncpy (s.name, name ? name : "", 63);
     s.name[63] = '\0';
+    s.rootBpm.store (rootBpm, std::memory_order_relaxed);
     s.loaded    = true;
 
     if (slot + 1 > count_)
         count_ = slot + 1;
 }
 
-int SampleBank::addSample (const float* left, const float* right, int numFrames, const char* name)
+int SampleBank::addSample (const float* left, const float* right, int numFrames, const char* name, float rootBpm)
 {
     if (count_ >= kMaxSamples)
         return -1;
     const int slot = count_;
-    loadSlot (slot, left, right, numFrames, name);
+    loadSlot (slot, left, right, numFrames, name, rootBpm);
     return slots_[static_cast<size_t> (slot)].loaded ? slot : -1;
+}
+
+float SampleBank::getRootBpm (int slot) const
+{
+    if (slot < 0 || slot >= kMaxSamples)
+        return 120.0f;
+    return slots_[static_cast<size_t> (slot)].rootBpm.load (std::memory_order_relaxed);
+}
+
+void SampleBank::setRootBpm (int slot, float bpm)
+{
+    if (slot < 0 || slot >= kMaxSamples)
+        return;
+    slots_[static_cast<size_t> (slot)].rootBpm.store (bpm, std::memory_order_relaxed);
 }
 
 const SampleBuffer* SampleBank::getBuffer (int slot) const

@@ -93,9 +93,9 @@ private:
         // Space page: Freeze is a bool host parameter (toggle, not a rotary).
         std::unique_ptr<juce::ToggleButton> spaceFreezeToggle;
         std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> spaceFreezeAttachment;
-        // Material page: snap loop in/out to grid (bool).
-        std::unique_ptr<juce::ToggleButton> loopSnapToggle;
-        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> loopSnapAttachment;
+        // Material page: small "Follow" toggle in the Loop Start cell (LoopStartFollow bool).
+        std::unique_ptr<juce::ToggleButton> followToggle;
+        std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> followAttachment;
     };
     std::vector<PageControl> pageControls_;
     int lastBuiltTrack_ = -1;
@@ -103,6 +103,9 @@ private:
     // Space page: keep the Time rotary's text box in sync with the Time Mode knob.
     juce::Slider* spaceTimeSlider_ = nullptr;
     int           spaceTimeModeIdx_ = 3;
+
+    // Material page: Root BPM knob edits the active sample's per-sample tempo (not a track param).
+    juce::Slider* rootBpmSlider_ = nullptr;
 
     std::unique_ptr<ModPagePanel> modPagePanel_;
     juce::Viewport                  modPageViewport_;

@@ -439,7 +439,8 @@ namespace
             case P::MaterialTimeMode:
                 return (v > 0.5f) ? "Warp" : "Tape";
             case P::SampleRootBpm:
-                return juce::String (juce::roundToInt (sculpt::map::sampleRootBpm (v)));
+                // Per-sample property: show the active sample's stored BPM, not the track param.
+                return juce::String (juce::roundToInt (screen.materialSampleRootBpm));
             case P::GrainSync:
                 return (v > 0.5f) ? "Sync" : "Free";
             case P::GrainDensity:

@@ -111,6 +111,7 @@ namespace bridge
             case P::MaterialSampleMode: suffix = "materialSampleMode"; break;
             case P::MaterialSliceCount: suffix = "materialSliceCount"; break;
             case P::MaterialSampleSlot: suffix = "materialSampleSlot"; break;
+            case P::LoopStartFollow: suffix = "loopStartFollow"; break;
             default: break;
         }
 
@@ -167,6 +168,9 @@ public:
     // trackToAssign at the first. Returns success / count loaded.
     bool loadAudioFileIntoTrack (int trackIndex, const juce::File& file);
     int  loadAudioFilesIntoBank (const juce::Array<juce::File>& files, int trackToAssign);
+
+    // Set the native BPM of the sample currently active on a track (per-sample warp/sync property).
+    void setActiveSampleRootBpm (int trackIndex, float bpm);
 
 private:
     int  appendFileToBank (const juce::File& file);

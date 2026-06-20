@@ -152,6 +152,11 @@ enum class ParameterId : int
     // pointing at its own loaded sample. parameterDefault() returns 0 (slot 0); bridge overrides it.
     MaterialSampleSlot,
 
+    // > 0.5 = Loop Start Follow: when Loop Start stops moving (e.g. an automated / loop-snapped Loop
+    // Start lands on a new grid step), snap the playhead to it. Lets an automated Loop Start scrub
+    // the playhead to wherever it lands. Per-track bool.
+    LoopStartFollow,
+
     // ---- Global FX tail ----
     // Appended after the per-track region but flagged GLOBAL (see kFirstGlobalTail) so they are
     // single instrument-wide parameters, not per-track. One shared reverb + one shared delay are
@@ -262,6 +267,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialSampleMode: return 0.0f; // OneShot by default
         case ParameterId::MaterialSliceCount: return 0.667f; // 16 slices (index 4 of 1..64 set)
         case ParameterId::MaterialSampleSlot: return 0.0f;  // slot 0 (bridge overrides per-track)
+        case ParameterId::LoopStartFollow:    return 0.0f;  // off
         case ParameterId::GlobalReverbSize:    return 0.45f;
         case ParameterId::GlobalReverbDecay:   return 0.45f;
         case ParameterId::GlobalSpaceDamp:     return 0.40f;
@@ -303,6 +309,42 @@ namespace map
         const float x = 40.0f + clamp01 (n) * 200.0f;
         const int   b = std::clamp (static_cast<int> (std::lround (static_cast<double> (x))), 40, 240);
         return static_cast<float> (b);
+    }
+
+    // Inverse of sampleRootBpm: a whole BPM (40..240) back to the normalized knob position.
+    inline float sampleRootBpmToNorm (float bpm)
+    {
+        return clampf ((std::clamp (bpm, 40.0f, 240.0f) - 40.0f) / 200.0f, 0.0f, 1.0f);
+    }
+
+    // Estimate a loop's native BPM from its duration: choose the power-of-two bar count (assuming
+    // 4/4) whose resulting tempo lands closest (in log space) to a preferred center within [40,240].
+    // The center is 110 (slightly below 120) so octave-ambiguous loops resolve toward the lower,
+    // more common tempo (e.g. an 80 BPM loop is reported as 80, not 160). Falls back to 120 for
+    // material that fits no musical bar count (one-shots). Returns a whole BPM. Used to auto-tag a
+    // sample's Root BPM on load so warp/tempo-sync aligns without manual entry.
+    inline float estimateSampleRootBpm (float durationSec)
+    {
+        if (durationSec <= 1.0e-3f)
+            return 120.0f;
+        constexpr float kCenter = 110.0f;
+        float best = 120.0f, bestDist = 1.0e9f;
+        bool  found = false;
+        for (int bars : { 1, 2, 4, 8, 16, 32 })
+        {
+            const float bpm = 240.0f * static_cast<float> (bars) / durationSec;
+            if (bpm < 40.0f || bpm > 240.0f)
+                continue;
+            const float dist = std::fabs (std::log (bpm / kCenter));
+            if (dist < bestDist)
+            {
+                bestDist = dist;
+                best     = bpm;
+                found    = true;
+            }
+        }
+        const float bpm = found ? best : 120.0f;
+        return static_cast<float> (std::clamp (static_cast<int> (std::lround (bpm)), 40, 240));
     }
 
     // Warp mode only: varispeed multiplier around unity. n=0.5 -> 1.0; ends ~0.25x .. 4x.
@@ -642,6 +684,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MaterialSampleMode: return "Sample Mode";
         case ParameterId::MaterialSliceCount: return "Slices";
         case ParameterId::MaterialSampleSlot: return "Sample";
+        case ParameterId::LoopStartFollow:    return "Follow";
         case ParameterId::GlobalReverbSize:    return "Reverb Size";
         case ParameterId::GlobalReverbDecay:   return "Reverb Decay";
         case ParameterId::GlobalSpaceDamp:     return "Damp";

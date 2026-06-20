@@ -66,6 +66,10 @@ public:
     // nullptr = fall back to owned MaterialSource buffer. RT-safe: pointer assignment only.
     void setExternalSampleBuffer (const SampleBuffer* buf) { material_.setExternalBuffer (buf); }
 
+    // Native tempo of the active sample (warp/sync). Engine pushes this each block from the bank,
+    // so Warp mode stretches whatever sample is loaded/p-locked to host tempo. RT-safe.
+    void setActiveSampleRootBpm (float bpm) { activeSampleRootBpm_ = bpm; }
+
     // Message thread: replaces material audio (used after decoding a file).
     void replaceMaterialStereo (const float* left, const float* right, int numFrames);
 
@@ -83,6 +87,14 @@ private:
     // Pending sampler-machine trig from the step sequencer (applied in updateParameters).
     bool  samplerTrigPending_ = false;
     float samplerTrigPos01_   = -1.0f;
+
+    // Active sample's native tempo (warp/sync), pushed by Engine each block from the bank.
+    float activeSampleRootBpm_ = 120.0f;
+
+    // Loop Start Follow: snap the playhead to Loop Start once it stops moving. Tracks the last
+    // Loop Start value and whether a settle-snap is still pending for the current resting position.
+    float followLoopStartLast_ = -1.0f;
+    bool  followSeekPending_    = false;
 
     // Slice mode: round-robin cursor + the region the current one-shot is playing (a slice, persisted
     // across blocks so the tape keeps the slice bounds between trigs instead of the loop knobs).
