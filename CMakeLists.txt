@@ -67,6 +67,7 @@ target_sources(SculptSampler PRIVATE
     Source/audio/SpectralFilterStage.cpp
     Source/audio/ColorStage.cpp
     Source/audio/SpaceStage.cpp
+    Source/audio/SpaceSendBus.cpp
     Source/audio/SpaceDelay.cpp
     Source/audio/HallReverb.cpp
     Source/audio/AllpassDelay.cpp

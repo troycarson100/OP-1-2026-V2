@@ -89,11 +89,6 @@ void Track::setCaptureArmed (bool armed)
         recorder_.disarm();
 }
 
-void Track::clearSpaceBuffers()
-{
-    engine_.getSpace().requestClear();
-}
-
 void Track::replaceMaterialStereo (const float* left, const float* right, int numFrames)
 {
     material_.loadStereoPCM (left, right, numFrames);
@@ -299,19 +294,8 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
                                   get (ParameterId::ColorNoiseTone),
                                   get (ParameterId::ColorWet));
 
-    engine_.getSpace().setParams (get (ParameterId::SpaceDelayAmount),
-                                  get (ParameterId::SpaceDelayTime),
-                                  get (ParameterId::SpaceReverbAmount),
-                                  get (ParameterId::SpaceReverbSize),
-                                  get (ParameterId::SpaceDelayFeedback),
-                                  get (ParameterId::SpaceSpread),
-                                  get (ParameterId::SpaceDamp),
-                                  get (ParameterId::SpaceReverbDecay),
-                                  get (ParameterId::SpaceDelayTimeMode),
-                                  get (ParameterId::SpaceFreeze) > 0.5f,
-                                  engineSampleRate,
-                                  granularTiming);
-
+    // Reverb/delay are global now (Engine::SpaceSendBus); this track only contributes a send level
+    // (SpaceReverbAmount / SpaceDelayAmount), applied when the Engine builds the shared send buses.
     engine_.getMixBus().setParams (get (ParameterId::MixEqLowGain),
                                   get (ParameterId::MixEqMidGain),
                                   get (ParameterId::MixEqHighGain),

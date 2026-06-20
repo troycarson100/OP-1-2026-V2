@@ -55,16 +55,18 @@ namespace
           ParameterId::ColorCompress, ParameterId::ColorNoise, ParameterId::ColorNoiseDecay,
           ParameterId::ColorNoiseTone, ParameterId::ColorWet,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
-        // Space (Vast-style)
-        { ParameterId::SpaceDelayAmount,   ParameterId::SpaceDelayTime,     ParameterId::SpaceReverbAmount,
-          ParameterId::SpaceReverbSize,    ParameterId::SpaceDelayFeedback, ParameterId::SpaceSpread,
-          ParameterId::SpaceDamp,            ParameterId::SpaceReverbDecay, ParameterId::SpaceDelayTimeMode,
-          ParameterId::SpaceFreeze, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
-        // Mixer: level/pan, master out, 3-band mix EQ, compressor (stereo-linked in MixBusStage).
+        // Space: GLOBAL reverb/delay character (one shared FX; tracks feed it via the Mixer-page
+        // Rev/Dly Send knobs). Delay first, then reverb, then shared damp/spread/freeze.
+        { ParameterId::GlobalDelayTime,     ParameterId::GlobalDelayFeedback, ParameterId::GlobalDelayTimeMode,
+          ParameterId::GlobalReverbSize,    ParameterId::GlobalReverbDecay,
+          ParameterId::GlobalSpaceDamp,     ParameterId::GlobalSpaceSpread,   ParameterId::GlobalSpaceFreeze,
+          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
+        // Mixer: level/pan, master out, 3-band mix EQ, compressor, + per-track Reverb/Delay sends.
         { ParameterId::TrackLevel, ParameterId::TrackPan, ParameterId::OutputGain,
           ParameterId::MixEqLowGain, ParameterId::MixEqMidGain, ParameterId::MixEqHighGain,
           ParameterId::MixCompThreshold, ParameterId::MixCompMakeup,
-          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
+          ParameterId::SpaceReverbAmount, ParameterId::SpaceDelayAmount,
+          kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },
         // Mod (encoder mapping lives on Mod page UI; no APVTS row here)
         { kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty,
           kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty, kEmpty },

@@ -14,7 +14,6 @@ void TrackEngine::prepare (double sampleRate)
     filter_.prepare (sampleRate);
     spectralFilter_.prepare (sampleRate);
     color_.prepare (sampleRate);
-    space_.prepare (sampleRate);
     mixBus_.prepare (sampleRate);
 
     materialLevel_.prepare (sampleRate, 0.02f);
@@ -32,7 +31,6 @@ void TrackEngine::reset()
     filter_.reset();
     spectralFilter_.reset();
     color_.reset();
-    space_.reset();
     mixBus_.reset();
 }
 
@@ -56,8 +54,11 @@ void TrackEngine::process (const SampleBuffer& material, float* outL, float* out
     // Material stage: tape/loop playback of the source buffer.
     tape_.process (material, dryL_.data(), dryR_.data(), n);
 
-    // Granular stage: wet grain cloud from the same material.
-    granular_.process (material, grainL_.data(), grainR_.data(), n);
+    // Granular stage: wet grain cloud from the same material. Skip entirely when the cloud is idle
+    // (not spawning and no grains in flight) — grainL_/grainR_ stay the zero we cleared above, so the
+    // blend below is unchanged. Saves the whole grain pool render on tracks not using granular.
+    if (granular_.isSpawning() || granular_.getActiveGrains() > 0)
+        granular_.process (material, grainL_.data(), grainR_.data(), n);
 
     // Blend dry material against the grain cloud, scaled by material level.
     for (int i = 0; i < n; ++i)
@@ -76,7 +77,7 @@ void TrackEngine::process (const SampleBuffer& material, float* outL, float* out
         filter_.process (outL, outR, n);
 
     color_.process (outL, outR, n);
-    space_.process (outL, outR, n);
+    // Reverb/delay are applied globally via the Engine's SpaceSendBus (per-track sends), not here.
     mixBus_.process (outL, outR, n);
 }
 

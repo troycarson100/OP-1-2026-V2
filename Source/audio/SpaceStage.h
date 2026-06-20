@@ -54,6 +54,11 @@ private:
     SmoothedValue delayWetGainSm_;
     SmoothedValue reverbWetGainSm_;
 
+    // CPU bypass latches: true while that engine is skipped (amount + smoothed wet gain at zero).
+    // Used so the delay/reverb lines are reset exactly once on entering bypass (clean re-enable).
+    bool delayBypassed_  = true;
+    bool reverbBypassed_ = true;
+
     float delayWet01_  = 0.0f;
     float reverbWet01_ = 0.0f;
 

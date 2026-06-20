@@ -80,6 +80,30 @@ void SpaceStage::process (float* left, float* right, int numSamples)
     {
         delay_.reset();
         reverb_.reset();
+        delayBypassed_  = true;
+        reverbBypassed_ = true;
+    }
+
+    // Targets for the wet mix gains; smoothed per sample below so amount jumps don't click.
+    delayWetGainSm_.setTarget  (delayAmt_ * delayAmt_ * 1.15f);
+    reverbWetGainSm_.setTarget (revAmt_   * revAmt_   * 1.15f);
+
+    // CPU bypass: when an amount is at (or smoothing through) zero its wet contribution is exactly
+    // zero, so skip that engine entirely instead of running a full delay/Dattorro hall for silence.
+    // On entering bypass we reset the lines once so a later re-enable starts cleanly from silence.
+    constexpr float kAmtEps  = 1.0e-4f;
+    constexpr float kGainEps = 1.0e-5f;
+    const bool delayActive  = delayAmt_ > kAmtEps || delayWetGainSm_.getCurrent()  > kGainEps;
+    const bool reverbActive = revAmt_   > kAmtEps || reverbWetGainSm_.getCurrent() > kGainEps;
+
+    if (! delayActive && ! reverbActive)
+    {
+        if (! delayBypassed_)  { delay_.reset();  delayBypassed_  = true; }
+        if (! reverbBypassed_) { reverb_.reset(); reverbBypassed_ = true; }
+        // Output is the dry signal untouched; just decay the LCD meters.
+        delayWet01_  *= 0.85f;
+        reverbWet01_ *= 0.88f;
+        return;
     }
 
     for (int i = 0; i < n; ++i)
@@ -88,22 +112,35 @@ void SpaceStage::process (float* left, float* right, int numSamples)
         dryR_[static_cast<size_t> (i)] = right[i];
     }
 
-    delay_.process (dryL_.data(), dryR_.data(), wetDL_.data(), wetDR_.data(), n);
-
-    for (int i = 0; i < n; ++i)
+    if (delayActive)
     {
-        const float d  = dryL_[static_cast<size_t> (i)];
-        const float e  = dryR_[static_cast<size_t> (i)];
-        const float wL = wetDL_[static_cast<size_t> (i)];
-        const float wR = wetDR_[static_cast<size_t> (i)];
-        monoRv_[static_cast<size_t> (i)] = 0.5f * (d + e) + 0.18f * (wL + wR);
+        delay_.process (dryL_.data(), dryR_.data(), wetDL_.data(), wetDR_.data(), n);
+        delayBypassed_ = false;
+    }
+    else
+    {
+        if (! delayBypassed_) { delay_.reset(); delayBypassed_ = true; }
+        for (int i = 0; i < n; ++i) { wetDL_[static_cast<size_t> (i)] = 0.0f; wetDR_[static_cast<size_t> (i)] = 0.0f; }
     }
 
-    reverb_.processBlock (monoRv_.data(), wetRL_.data(), wetRR_.data(), n);
-
-    // Targets for the wet mix gains; smoothed per sample below so amount jumps don't click.
-    delayWetGainSm_.setTarget  (delayAmt_ * delayAmt_ * 1.15f);
-    reverbWetGainSm_.setTarget (revAmt_   * revAmt_   * 1.15f);
+    if (reverbActive)
+    {
+        for (int i = 0; i < n; ++i)
+        {
+            const float d  = dryL_[static_cast<size_t> (i)];
+            const float e  = dryR_[static_cast<size_t> (i)];
+            const float wL = wetDL_[static_cast<size_t> (i)];
+            const float wR = wetDR_[static_cast<size_t> (i)];
+            monoRv_[static_cast<size_t> (i)] = 0.5f * (d + e) + 0.18f * (wL + wR);
+        }
+        reverb_.processBlock (monoRv_.data(), wetRL_.data(), wetRR_.data(), n);
+        reverbBypassed_ = false;
+    }
+    else
+    {
+        if (! reverbBypassed_) { reverb_.reset(); reverbBypassed_ = true; }
+        for (int i = 0; i < n; ++i) { wetRL_[static_cast<size_t> (i)] = 0.0f; wetRR_[static_cast<size_t> (i)] = 0.0f; }
+    }
 
     float delayPeak  = 0.0f;
     float reverbPeak = 0.0f;

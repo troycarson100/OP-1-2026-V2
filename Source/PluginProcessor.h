@@ -25,6 +25,14 @@ namespace bridge
                 case P::Macro2:        return "macro2";
                 case P::Macro3:        return "macro3";
                 case P::Macro4:        return "macro4";
+                case P::GlobalReverbSize:    return "gReverbSize";
+                case P::GlobalReverbDecay:   return "gReverbDecay";
+                case P::GlobalSpaceDamp:     return "gSpaceDamp";
+                case P::GlobalSpaceSpread:   return "gSpaceSpread";
+                case P::GlobalDelayTime:     return "gDelayTime";
+                case P::GlobalDelayFeedback: return "gDelayFb";
+                case P::GlobalDelayTimeMode: return "gDelayTimeMode";
+                case P::GlobalSpaceFreeze:   return "gSpaceFreeze";
                 default:               return "unknown";
             }
         }

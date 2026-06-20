@@ -6,7 +6,6 @@
 #include "FilterStage.h"
 #include "SpectralFilterStage.h"
 #include "ColorStage.h"
-#include "SpaceStage.h"
 #include "MixBusStage.h"
 #include "../util/Constants.h"
 #include "../util/SmoothedValue.h"
@@ -18,9 +17,10 @@ class SampleBuffer;
 struct GranularBlockTiming;
 
 // The DSP chain for one track:
-//   Material(tape) -> Granular -> Filter -> Color -> Space -> MixBus (EQ + comp)
-// Track owns the material and decides when this runs; TrackEngine only
-// processes audio. Scratch buffers are fixed-size members - no allocation.
+//   Material(tape) -> Granular -> Filter -> Color -> MixBus (EQ + comp)
+// Reverb/delay are no longer per-track: each track feeds the instrument-wide SpaceSendBus via its
+// Reverb/Delay Send (handled in Engine). Track owns the material and decides when this runs;
+// TrackEngine only processes audio. Scratch buffers are fixed-size members - no allocation.
 class TrackEngine
 {
 public:
@@ -32,7 +32,6 @@ public:
     FilterStage&         getFilter()         { return filter_; }
     SpectralFilterStage& getSpectralFilter() { return spectralFilter_; }
     ColorStage&          getColor()          { return color_; }
-    SpaceStage&          getSpace()          { return space_; }
     MixBusStage&         getMixBus()         { return mixBus_; }
     const MixBusStage&   getMixBus() const   { return mixBus_; }
 
@@ -58,7 +57,6 @@ private:
     FilterStage          filter_;
     SpectralFilterStage  spectralFilter_;
     ColorStage           color_;
-    SpaceStage           space_;
     MixBusStage          mixBus_;
 
     bool spectralMode_ = false;

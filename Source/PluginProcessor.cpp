@@ -127,7 +127,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
 
         if (! isTrackParameter (id))
         {
-            addParam (bridge::paramIdString (-1, id), parameterName (id), parameterDefault (id));
+            const juce::String gid   = bridge::paramIdString (-1, id);
+            const juce::String gname = parameterName (id);
+            if (id == ParameterId::GlobalDelayTimeMode)
+                addChoiceParam (layout, gid, gname, spaceTimeModeChoices, id);
+            else if (id == ParameterId::GlobalSpaceFreeze)
+                layout.add (std::make_unique<juce::AudioParameterBool> (
+                    juce::ParameterID { gid, 1 }, gname, sculpt::parameterDefault (id) > 0.5f));
+            else
+                addParam (gid, gname, parameterDefault (id));
         }
         else
         {

@@ -316,7 +316,7 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
 
         PageControl control;
         control.id = id;
-        if (id == sculpt::ParameterId::SpaceFreeze)
+        if (id == sculpt::ParameterId::GlobalSpaceFreeze)
         {
             control.spaceFreezeToggle = std::make_unique<juce::ToggleButton> ("Freeze");
             control.spaceFreezeToggle->setClickingTogglesState (true);
@@ -372,6 +372,8 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
                 {
                     if (! (plockMode_ && plockStep_ >= 0))
                         return;
+                    if (! sculpt::isTrackParameter (id))   // global FX params aren't per-step-lockable
+                        return;
                     const int track = getSelectedTrackFromParameter();
                     float norm = static_cast<float> (sliderPtr->getValue());
                     if (auto* p = processor_.getValueTreeState().getParameter (bridge::paramIdString (track, id)))
@@ -382,7 +384,7 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
 
             // Delay Time: show the musical/free value (matching the LCD + Time Mode),
             // not the raw normalized number. Set after the attachment so it wins.
-            if (id == sculpt::ParameterId::SpaceDelayTime)
+            if (id == sculpt::ParameterId::GlobalDelayTime)
             {
                 control.slider->textFromValueFunction = [this] (double value)
                 {
@@ -520,6 +522,10 @@ void SculptSamplerAudioProcessorEditor::timerCallback()
             for (auto& pc : pageControls_)
             {
                 if (pc.slider == nullptr || pc.slider->isMouseButtonDown())
+                    continue;
+                // Global params (e.g. the Space-page global FX, Mixer OutputGain) aren't per-track and
+                // have no per-step effective value to follow; leave their knobs on the live value.
+                if (! sculpt::isTrackParameter (pc.id))
                     continue;
                 const float eff = processor_.getEngine().getEffectiveTrackParameter (track, pc.id);
                 float natural = eff;

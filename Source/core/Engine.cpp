@@ -57,6 +57,15 @@ void Engine::prepare (double sampleRate, int blockSize)
 
     clock_.prepare (sampleRate_);
     mixer_.prepare (sampleRate_);
+    spaceSend_.prepare (sampleRate_);
+    for (int t = 0; t < kNumTracks; ++t)
+    {
+        const auto ts = static_cast<size_t> (t);
+        reverbSendSm_[ts].prepare (sampleRate_, 0.02f);
+        reverbSendSm_[ts].snap (0.0f);
+        delaySendSm_[ts].prepare (sampleRate_, 0.02f);
+        delaySendSm_[ts].snap (0.0f);
+    }
     metronome_.prepare (sampleRate_);
     inputEnvelope_.prepare (sampleRate_);
     inputEnvelope_.setTimesMs (5.0f, 150.0f);
@@ -373,19 +382,14 @@ void Engine::fireWarpLaunchDeadlines (double beatAtBlockStart)
     }
 }
 
-void Engine::requestSpaceClear (int trackIndex)
+void Engine::requestSpaceClear (int /*trackIndex*/)
 {
-    if (trackIndex >= 0 && trackIndex < kNumTracks)
-        pendingSpaceClear_.fetch_or (1u << static_cast<uint32_t> (trackIndex), std::memory_order_relaxed);
+    // Reverb/delay are global now; flush the one shared send bus (thread-safe atomic flag).
+    spaceSend_.requestClear();
 }
 
 void Engine::applyPendingRequests()
 {
-    const uint32_t spaceClear = pendingSpaceClear_.exchange (0);
-    for (int t = 0; t < kNumTracks; ++t)
-        if ((spaceClear & (1u << static_cast<uint32_t> (t))) != 0)
-            tracks_[static_cast<size_t> (t)].clearSpaceBuffers();
-
     const uint32_t triggers = pendingTriggers_.exchange (0);
     const uint32_t stops    = pendingStops_.exchange (0);
 
@@ -730,9 +734,63 @@ void Engine::processChunk (float** inputs, float** outputs,
 
     mixer_.setOutputGain (params_.effectiveGlobal (ParameterId::OutputGain));
 
+    // Build the shared reverb/delay send buses: each track contributes its post-level (mute-aware)
+    // signal scaled by its per-track send. Sends are smoothed so a p-locked send jump doesn't click.
+    for (int i = 0; i < numSamples; ++i)
+    {
+        const auto idx = static_cast<size_t> (i);
+        delaySendL_[idx] = delaySendR_[idx] = revSendL_[idx] = revSendR_[idx] = 0.0f;
+    }
+    for (int t = 0; t < kNumTracks; ++t)
+    {
+        const auto ts = static_cast<size_t> (t);
+        const bool muted = trackMuted_[ts].load (std::memory_order_relaxed);
+        const float levelGain = muted ? 0.0f : map::trackGain (params_.effective (t, ParameterId::TrackLevel));
+        const float rsT = muted ? 0.0f : params_.effective (t, ParameterId::SpaceReverbAmount);
+        const float dsT = muted ? 0.0f : params_.effective (t, ParameterId::SpaceDelayAmount);
+        reverbSendSm_[ts].setTarget (rsT);
+        delaySendSm_[ts].setTarget  (dsT);
+
+        // Skip tracks that aren't sending (the common case): no send target and the smoother has
+        // already settled to zero. Nothing to add to the bus, so don't pay for the per-sample loop.
+        constexpr float kEps = 1.0e-5f;
+        if (rsT <= kEps && dsT <= kEps
+            && reverbSendSm_[ts].getCurrent() <= kEps && delaySendSm_[ts].getCurrent() <= kEps)
+        {
+            reverbSendSm_[ts].skip (numSamples);
+            delaySendSm_[ts].skip (numSamples);
+            continue;
+        }
+
+        for (int i = 0; i < numSamples; ++i)
+        {
+            const auto idx = static_cast<size_t> (i);
+            const float l  = busL_[ts][idx] * levelGain;
+            const float r  = busR_[ts][idx] * levelGain;
+            const float rs = reverbSendSm_[ts].next();
+            const float ds = delaySendSm_[ts].next();
+            revSendL_[idx]   += l * rs;  revSendR_[idx]   += r * rs;
+            delaySendL_[idx] += l * ds;  delaySendR_[idx] += r * ds;
+        }
+    }
+
+    spaceSend_.setParams (params_.effectiveGlobal (ParameterId::GlobalDelayTime),
+                          params_.effectiveGlobal (ParameterId::GlobalDelayFeedback),
+                          params_.effectiveGlobal (ParameterId::GlobalDelayTimeMode),
+                          params_.effectiveGlobal (ParameterId::GlobalReverbSize),
+                          params_.effectiveGlobal (ParameterId::GlobalReverbDecay),
+                          params_.effectiveGlobal (ParameterId::GlobalSpaceDamp),
+                          params_.effectiveGlobal (ParameterId::GlobalSpaceSpread),
+                          params_.effectiveGlobal (ParameterId::GlobalSpaceFreeze) > 0.5f,
+                          granularTiming);
+
     float* outL = outputs[0] + offset;
     float* outR = (numOutputChannels > 1 ? outputs[1] : outputs[0]) + offset;
     mixer_.process (busLPtrs, busRPtrs, outL, outR, numSamples);
+
+    // Add the global reverb/delay wet returns on top of the dry master mix.
+    spaceSend_.processAdd (delaySendL_.data(), delaySendR_.data(),
+                           revSendL_.data(), revSendR_.data(), outL, outR, numSamples);
 
     // Metronome click on top of the mix (monitor level, transport-aligned downbeat). Only clicks
     // while the transport is running, so arming METRO doesn't tick until PLAY.
@@ -943,18 +1001,17 @@ void Engine::updateScreenModel()
 
     if (selectedPage_ == Page::Space)
     {
-        auto&       sp = tracks_[static_cast<size_t> (selected)].getEngine().getSpace();
         auto&       v  = screen_.space;
-        v.delaySeconds       = sp.getDelaySeconds();
-        v.delayFeedback01    = params_.effective (selected, ParameterId::SpaceDelayFeedback);
-        v.delaySpread01      = params_.effective (selected, ParameterId::SpaceSpread);
-        v.delayWet01         = sp.getDelayWet01();
-        v.delayTimeMode      = map::spaceDelayTimeModeIndex (params_.effective (selected, ParameterId::SpaceDelayTimeMode));
-        v.reverbSize01       = params_.effective (selected, ParameterId::SpaceReverbSize);
-        v.reverbDecaySeconds = sp.getReverbDecaySeconds();
-        v.reverbDamp01       = params_.effective (selected, ParameterId::SpaceDamp);
-        v.reverbWet01        = sp.getReverbWet01();
-        v.frozen             = params_.effective (selected, ParameterId::SpaceFreeze) > 0.5f;
+        v.delaySeconds       = spaceSend_.getDelaySeconds();
+        v.delayFeedback01    = params_.effectiveGlobal (ParameterId::GlobalDelayFeedback);
+        v.delaySpread01      = params_.effectiveGlobal (ParameterId::GlobalSpaceSpread);
+        v.delayWet01         = spaceSend_.getDelayWet01();
+        v.delayTimeMode      = map::spaceDelayTimeModeIndex (params_.effectiveGlobal (ParameterId::GlobalDelayTimeMode));
+        v.reverbSize01       = params_.effectiveGlobal (ParameterId::GlobalReverbSize);
+        v.reverbDecaySeconds = spaceSend_.getReverbDecaySeconds();
+        v.reverbDamp01       = params_.effectiveGlobal (ParameterId::GlobalSpaceDamp);
+        v.reverbWet01        = spaceSend_.getReverbWet01();
+        v.frozen             = params_.effectiveGlobal (ParameterId::GlobalSpaceFreeze) > 0.5f;
     }
 
     if (selectedPage_ == Page::Color)
@@ -1014,8 +1071,15 @@ void Engine::fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* o
         if (startF >= frames)
             continue;
 
+        // Cap reads per bin so this is O(numBins) not O(numFrames): a long sample (e.g. 90 s) was
+        // scanning millions of frames per bin EVERY UI tick, saturating the message thread and
+        // lagging the whole app. Striding still catches representative peaks for the display.
+        constexpr int kMaxReadsPerBin = 64;
+        const int span = endF - startF;
+        const int step = span > kMaxReadsPerBin ? span / kMaxReadsPerBin : 1;
+
         float peak = 0.0f;
-        for (int f = startF; f < endF; ++f)
+        for (int f = startF; f < endF; f += step)
         {
             const float L = buf.getSample (0, f);
             const float R = buf.getSample (rightCh, f);

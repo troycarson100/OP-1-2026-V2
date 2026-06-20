@@ -146,16 +146,34 @@ enum class ParameterId : int
     // Slice count for Slice mode (mapped to a musical set 1..64 via map::materialSliceCount).
     MaterialSliceCount,
 
+    // ---- Global FX tail ----
+    // Appended after the per-track region but flagged GLOBAL (see kFirstGlobalTail) so they are
+    // single instrument-wide parameters, not per-track. One shared reverb + one shared delay are
+    // fed by each track's SpaceReverbAmount / SpaceDelayAmount (now used as per-track sends), the
+    // Digitakt aux model. Kept at the enum end so existing saved-state indices never shift.
+    GlobalReverbSize,
+    GlobalReverbDecay,
+    GlobalSpaceDamp,        // shared damping (reverb + delay feedback paths)
+    GlobalSpaceSpread,      // shared stereo width
+    GlobalDelayTime,
+    GlobalDelayFeedback,
+    GlobalDelayTimeMode,    // Straight / Dotted / Triplet / Free (choice)
+    GlobalSpaceFreeze,      // > 0.5: hold delay+reverb buffers in self-sustain
+
     Count
 };
 
 constexpr int kNumParameters      = static_cast<int> (ParameterId::Count);
 constexpr int kFirstTrackParam    = static_cast<int> (ParameterId::TrackLevel);
-constexpr int kNumTrackParams     = kNumParameters - kFirstTrackParam;
+// Per-track parameters are [kFirstTrackParam, kFirstGlobalTail). The global-FX tail after it is
+// global again, so the per-track range (and scene/pattern blob layout) is unchanged by the append.
+constexpr int kFirstGlobalTail    = static_cast<int> (ParameterId::GlobalReverbSize);
+constexpr int kNumTrackParams     = kFirstGlobalTail - kFirstTrackParam;
 
 constexpr bool isTrackParameter (ParameterId id)
 {
-    return static_cast<int> (id) >= kFirstTrackParam;
+    const int i = static_cast<int> (id);
+    return i >= kFirstTrackParam && i < kFirstGlobalTail;
 }
 
 inline float parameterDefault (ParameterId id)
@@ -207,9 +225,9 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::ColorNoiseDecay: return 0.35f;  // ~300ms decay
         case ParameterId::ColorNoiseTone:  return 0.5f;   // ~1kHz
         case ParameterId::ColorWet:        return 0.30f;
-        case ParameterId::SpaceDelayAmount:   return 0.25f;
+        case ParameterId::SpaceDelayAmount:   return 0.0f;   // per-track delay send (dry until dialed)
         case ParameterId::SpaceDelayTime:     return 0.35f;
-        case ParameterId::SpaceReverbAmount:  return 0.20f;
+        case ParameterId::SpaceReverbAmount:  return 0.0f;   // per-track reverb send (dry until dialed)
         case ParameterId::SpaceReverbSize:    return 0.45f;
         case ParameterId::SpaceDelayFeedback: return 0.30f;
         case ParameterId::SpaceSpread:        return 0.50f;
@@ -237,6 +255,14 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialMachine: return 1.0f;   // Sampler by default (silent until sequenced)
         case ParameterId::MaterialSampleMode: return 0.0f; // OneShot by default
         case ParameterId::MaterialSliceCount: return 0.667f; // 16 slices (index 4 of 1..64 set)
+        case ParameterId::GlobalReverbSize:    return 0.45f;
+        case ParameterId::GlobalReverbDecay:   return 0.45f;
+        case ParameterId::GlobalSpaceDamp:     return 0.40f;
+        case ParameterId::GlobalSpaceSpread:   return 0.50f;
+        case ParameterId::GlobalDelayTime:     return 0.35f;
+        case ParameterId::GlobalDelayFeedback: return 0.30f;
+        case ParameterId::GlobalDelayTimeMode: return 1.0f;  // Free (last choice index)
+        case ParameterId::GlobalSpaceFreeze:   return 0.0f;
         case ParameterId::LoopSnapGrid:    return 0.0f;   // off
         default:                           return 0.0f;
     }
@@ -572,9 +598,9 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::ColorNoiseDecay: return "Noise Decay";
         case ParameterId::ColorNoiseTone:  return "Noise Tone";
         case ParameterId::ColorWet:        return "Wet";
-        case ParameterId::SpaceDelayAmount:   return "Delay";
+        case ParameterId::SpaceDelayAmount:   return "Dly Send";
         case ParameterId::SpaceDelayTime:     return "Time";
-        case ParameterId::SpaceReverbAmount:  return "Reverb";
+        case ParameterId::SpaceReverbAmount:  return "Rev Send";
         case ParameterId::SpaceReverbSize:    return "Size";
         case ParameterId::SpaceDelayFeedback: return "Fdbk";
         case ParameterId::SpaceSpread:        return "Spread";
@@ -601,6 +627,14 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MaterialMachine: return "Machine";
         case ParameterId::MaterialSampleMode: return "Sample Mode";
         case ParameterId::MaterialSliceCount: return "Slices";
+        case ParameterId::GlobalReverbSize:    return "Reverb Size";
+        case ParameterId::GlobalReverbDecay:   return "Reverb Decay";
+        case ParameterId::GlobalSpaceDamp:     return "Damp";
+        case ParameterId::GlobalSpaceSpread:   return "Spread";
+        case ParameterId::GlobalDelayTime:     return "Delay Time";
+        case ParameterId::GlobalDelayFeedback: return "Delay Fdbk";
+        case ParameterId::GlobalDelayTimeMode: return "Time Mode";
+        case ParameterId::GlobalSpaceFreeze:   return "Freeze";
         case ParameterId::LoopSnapGrid:    return "Loop Snap";
         default:                           return "Unknown";
     }

@@ -13,6 +13,8 @@
 #include "../audio/SampleBuffer.h"
 #include "../audio/Mixer.h"
 #include "../audio/Metronome.h"
+#include "../audio/SpaceSendBus.h"
+#include "../util/SmoothedValue.h"
 #include "../modulation/EnvelopeFollower.h"
 #include "../modulation/MacroControls.h"
 #include "../modulation/ModEngine.h"
@@ -183,6 +185,12 @@ private:
 
     std::array<Track, kNumTracks> tracks_;
     Mixer mixer_;
+    // Instrument-wide reverb/delay send FX (shared by all tracks) + per-track send smoothers and the
+    // summed send-bus scratch. Replaces the old per-track SpaceStage (O(1) FX cost, the Pi CPU win).
+    SpaceSendBus spaceSend_;
+    std::array<SmoothedValue, kNumTracks> reverbSendSm_;
+    std::array<SmoothedValue, kNumTracks> delaySendSm_;
+    std::array<float, kMaxBlockSize> delaySendL_ {}, delaySendR_ {}, revSendL_ {}, revSendR_ {};
     Metronome metronome_;
     std::atomic<bool> metronomeEnabled_ { false };
 
@@ -226,7 +234,6 @@ private:
     bool   prepared_   = false;
 
     std::atomic<int> modLcdSlot_ { 0 };
-    std::atomic<uint32_t> pendingSpaceClear_ { 0 };
     std::atomic<int> granularEncoderPage_ { 0 };
 };
 

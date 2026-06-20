@@ -8,7 +8,7 @@ namespace sculpt
 void Scene::captureFrom (const ParameterState& state, int currentTrack, int currentPage)
 {
     for (int t = 0; t < kNumTracks; ++t)
-        for (int i = kFirstTrackParam; i < kNumParameters; ++i)
+        for (int i = kFirstTrackParam; i < kFirstGlobalTail; ++i)
             trackParams[static_cast<size_t> (t)][static_cast<size_t> (i)]
                 = state.getTrack (t, static_cast<ParameterId> (i));
 
@@ -28,7 +28,7 @@ void Scene::applyTo (ParameterState& state) const
         return;
 
     for (int t = 0; t < kNumTracks; ++t)
-        for (int i = kFirstTrackParam; i < kNumParameters; ++i)
+        for (int i = kFirstTrackParam; i < kFirstGlobalTail; ++i)
             state.setTrack (t, static_cast<ParameterId> (i),
                             trackParams[static_cast<size_t> (t)][static_cast<size_t> (i)]);
 
@@ -46,7 +46,7 @@ void Scene::morphInto (const Scene& a, const Scene& b, float amount, ParameterSt
     const float t01 = clamp01 (amount);
 
     for (int t = 0; t < kNumTracks; ++t)
-        for (int i = kFirstTrackParam; i < kNumParameters; ++i)
+        for (int i = kFirstTrackParam; i < kFirstGlobalTail; ++i)
         {
             const auto ti = static_cast<size_t> (t);
             const auto pi = static_cast<size_t> (i);

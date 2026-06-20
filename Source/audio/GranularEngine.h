@@ -82,6 +82,9 @@ public:
 
     float getMix() const          { return params_.mix; }
     int   getActiveGrains() const { return pool_.countActive(); }
+    // True while grains are being spawned. With getActiveGrains()==0 and this false the cloud is
+    // fully idle, so callers can skip granular processing entirely (no grains in flight to render).
+    bool  isSpawning() const { return spawning_; }
 
     void fillGrainDisplay (const SampleBuffer& material, GrainDisplaySlot* out, int maxSlots) const;
     void getGrainFocusWindow01 (float totalFrames, float& outStart01, float& outLen01) const noexcept;
