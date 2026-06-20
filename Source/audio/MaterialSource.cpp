@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include "MaterialSource.h"
 #include "../util/MathUtils.h"
 #include "../util/Random.h"
@@ -109,6 +110,17 @@ void MaterialSource::loadStereoPCM (const float* left, const float* right, int n
         buffer_.setSample (0, i, l);
         buffer_.setSample (1, i, r);
     }
+}
+
+void MaterialSource::setSampleName (const char* name)
+{
+    if (name == nullptr)
+    {
+        name_[0] = '\0';
+        return;
+    }
+    std::strncpy (name_, name, 63);
+    name_[63] = '\0';
 }
 
 } // namespace sculpt

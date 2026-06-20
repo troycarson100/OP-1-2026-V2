@@ -46,6 +46,10 @@ constexpr float  kMaxImportSeconds     = 1800.0f; // 30 minutes
 
 constexpr double kDefaultSampleRate    = 44100.0;
 
+// Project sample pool: how many distinct samples can be loaded into one project (Elektron-style).
+// IDs are A1..A16, B1..B16, C1..C16 (16 per bank letter). Slots allocate only as loaded.
+constexpr int    kMaxBankSamples       = 48;
+
 // UI / message-thread waveform preview bins (Material page LCD). Not used on audio thread.
 constexpr int    kMaterialWaveformBins = 256;
 

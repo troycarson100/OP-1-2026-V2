@@ -146,6 +146,12 @@ enum class ParameterId : int
     // Slice count for Slice mode (mapped to a musical set 1..64 via map::materialSliceCount).
     MaterialSliceCount,
 
+    // Project sample bank slot selector (0..1 -> bank slot 0..kNumTracks-1). P-lockable: each step
+    // can play a different bank sample on the same track (Digitakt-style sample stealing). Default
+    // for track T is set per-track by the PluginProcessor to T/(kNumTracks-1) so each track starts
+    // pointing at its own loaded sample. parameterDefault() returns 0 (slot 0); bridge overrides it.
+    MaterialSampleSlot,
+
     // ---- Global FX tail ----
     // Appended after the per-track region but flagged GLOBAL (see kFirstGlobalTail) so they are
     // single instrument-wide parameters, not per-track. One shared reverb + one shared delay are
@@ -255,6 +261,7 @@ inline float parameterDefault (ParameterId id)
         case ParameterId::MaterialMachine: return 1.0f;   // Sampler by default (silent until sequenced)
         case ParameterId::MaterialSampleMode: return 0.0f; // OneShot by default
         case ParameterId::MaterialSliceCount: return 0.667f; // 16 slices (index 4 of 1..64 set)
+        case ParameterId::MaterialSampleSlot: return 0.0f;  // slot 0 (bridge overrides per-track)
         case ParameterId::GlobalReverbSize:    return 0.45f;
         case ParameterId::GlobalReverbDecay:   return 0.45f;
         case ParameterId::GlobalSpaceDamp:     return 0.40f;
@@ -416,6 +423,13 @@ namespace map
     {
         const double sr = sampleRate > 1.0e-6 ? sampleRate : 44100.0;
         return static_cast<float> (0.005 * sr);
+    }
+
+    // Bank slot index 0..numSlots-1 from normalized 0..1.
+    inline int materialSampleSlot (float n01, int numSlots)
+    {
+        if (numSlots <= 1) return 0;
+        return std::clamp (static_cast<int> (std::lround (clamp01 (n01) * static_cast<float> (numSlots - 1))), 0, numSlots - 1);
     }
 
     // Slice count for Sampler Slice mode: musical set 1..64 (7 steps).
@@ -627,6 +641,7 @@ inline const char* parameterName (ParameterId id)
         case ParameterId::MaterialMachine: return "Machine";
         case ParameterId::MaterialSampleMode: return "Sample Mode";
         case ParameterId::MaterialSliceCount: return "Slices";
+        case ParameterId::MaterialSampleSlot: return "Sample";
         case ParameterId::GlobalReverbSize:    return "Reverb Size";
         case ParameterId::GlobalReverbDecay:   return "Reverb Decay";
         case ParameterId::GlobalSpaceDamp:     return "Damp";

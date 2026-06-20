@@ -7,6 +7,7 @@
 #include "ui/PageModel.h"
 #include "ui/juce/InstrumentPanel.h"
 #include "ui/juce/ModPagePanel.h"
+#include "ui/juce/SampleBrowser.h"
 
 // Temporary debug UI only. Reads the portable ScreenModel for display and
 // attaches sliders to host parameters. No DSP, no engine logic, no core state.
@@ -16,7 +17,7 @@ class SculptSamplerAudioProcessorEditor : public juce::AudioProcessorEditor,
 {
 public:
     explicit SculptSamplerAudioProcessorEditor (SculptSamplerAudioProcessor&);
-    ~SculptSamplerAudioProcessorEditor() override = default;
+    ~SculptSamplerAudioProcessorEditor() override;
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -107,10 +108,17 @@ private:
     juce::Viewport                  modPageViewport_;
 
     juce::TextButton loadSampleButton_ { "LOAD" };
+    juce::TextButton bankButton_ { "BANK" };
     juce::TextButton spaceClearButton_ { "CLR SPACE" };
     juce::Label      helpLabel_;
 
     std::unique_ptr<juce::FileChooser> sampleChooser_;
+
+    // Custom multi-select sample browser (Elektron-style), shown in its own window.
+    void openSampleBrowser();
+    void closeSampleBrowser();
+    juce::Component::SafePointer<juce::DialogWindow> browserWindow_;
+    juce::File lastBrowseDir_;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (SculptSamplerAudioProcessorEditor)
 };

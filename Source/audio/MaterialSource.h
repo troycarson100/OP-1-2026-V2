@@ -38,10 +38,21 @@ public:
     // does not wipe user-imported audio when regenerating defaults.
     bool hasUserMaterial() const noexcept { return userMaterial_; }
 
+    // External bank buffer: when set, getActiveBuffer() returns this instead of the owned buffer.
+    // Set by Engine each block based on MaterialSampleSlot. RT-safe (pointer assignment only).
+    void                 setExternalBuffer (const SampleBuffer* buf) { externalBuf_ = buf; }
+    const SampleBuffer&  getActiveBuffer() const { return externalBuf_ ? *externalBuf_ : buffer_; }
+
+    // Human-readable name of the loaded sample (empty = placeholder). Written on file load.
+    void        setSampleName (const char* name);
+    const char* getSampleName() const { return name_; }
+
 private:
-    SampleBuffer buffer_;
-    double       sampleRate_ = 44100.0;
-    bool         userMaterial_ = false;
+    SampleBuffer        buffer_;
+    const SampleBuffer* externalBuf_ = nullptr;
+    double              sampleRate_  = 44100.0;
+    bool                userMaterial_ = false;
+    char                name_[64]    {};
 };
 
 } // namespace sculpt

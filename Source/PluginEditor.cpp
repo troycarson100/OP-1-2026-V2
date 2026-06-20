@@ -184,6 +184,10 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
         });
     };
 
+    addAndMakeVisible (bankButton_);
+    bankButton_.setTooltip ("Open the project sample bank browser: mark multiple files, load them all at once.");
+    bankButton_.onClick = [this] { openSampleBrowser(); };
+
     addAndMakeVisible (spaceClearButton_);
     spaceClearButton_.setTooltip ("Clears delay and reverb buffers on the selected track (next audio block).");
     spaceClearButton_.onClick = [this]
@@ -194,7 +198,9 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     helpLabel_.setColour (juce::Label::textColourId, kText.withAlpha (0.88f));
     helpLabel_.setMinimumHorizontalScale (1.0f);
     helpLabel_.setFont (juce::FontOptions (11.0f));
-    helpLabel_.setText ("Drag WAV/AIFF/FLAC/OGG here or use LOAD. Scenes A-D: enable SAVE then tap a letter to store.",
+    helpLabel_.setText ("Drag WAV/AIFF/FLAC/OGG or use LOAD to add to the project sample bank (A1, A2...). "
+                        "Turn the Sample knob to pick a bank slot; p-lock it per step. "
+                        "Scenes A-D: enable SAVE then tap a letter to store.",
                         juce::dontSendNotification);
     helpLabel_.setTooltip (
         "Material page: push Input Capture past halfway to arm recording from the plugin input while the track plays "
@@ -224,6 +230,13 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     setResizable (true, true);
     setResizeLimits (900, 700, 1600, 1200);
     setSize (980, 880);
+}
+
+SculptSamplerAudioProcessorEditor::~SculptSamplerAudioProcessorEditor()
+{
+    // The browser window's callbacks capture `this`; delete it synchronously before we go away.
+    if (browserWindow_ != nullptr)
+        delete browserWindow_.getComponent();
 }
 
 int SculptSamplerAudioProcessorEditor::getSelectedTrackFromParameter() const
@@ -629,7 +642,9 @@ void SculptSamplerAudioProcessorEditor::resized()
 
     muteButton_.setBounds (actionRow.removeFromLeft (70).reduced (0, 6));
     actionRow.removeFromLeft (6);
-    loadSampleButton_.setBounds (actionRow.removeFromLeft (88).reduced (0, 6));
+    loadSampleButton_.setBounds (actionRow.removeFromLeft (72).reduced (0, 6));
+    actionRow.removeFromLeft (4);
+    bankButton_.setBounds (actionRow.removeFromLeft (72).reduced (0, 6));
     spaceClearButton_.setBounds (actionRow.removeFromLeft (100).reduced (0, 6));
     helpLabel_.setBounds (actionRow.reduced (8, 6));
 
@@ -712,4 +727,56 @@ void SculptSamplerAudioProcessorEditor::filesDropped (const juce::StringArray& f
 {
     if (! files.isEmpty())
         processor_.loadAudioFileIntoTrack (getSelectedTrackFromParameter(), juce::File (files[0]));
+}
+
+void SculptSamplerAudioProcessorEditor::openSampleBrowser()
+{
+    if (browserWindow_ != nullptr)
+    {
+        browserWindow_->toFront (true);
+        return;
+    }
+
+    juce::File start = lastBrowseDir_;
+    if (! start.isDirectory())
+        start = juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+
+    auto* browser = new SampleBrowser (start);
+    const int track = getSelectedTrackFromParameter();
+
+    browser->onLoad = [this, track] (const juce::Array<juce::File>& files)
+    {
+        if (! files.isEmpty())
+        {
+            lastBrowseDir_ = files.getFirst().getParentDirectory();
+            processor_.loadAudioFilesIntoBank (files, track);
+        }
+        closeSampleBrowser();
+    };
+    browser->onCancel = [this] { closeSampleBrowser(); };
+
+    juce::DialogWindow::LaunchOptions o;
+    o.content.setOwned (browser);
+    o.dialogTitle = "Sample Bank";
+    o.dialogBackgroundColour = juce::Colour (0xff232327);
+    o.componentToCentreAround = this;
+    o.escapeKeyTriggersCloseButton = true;
+    o.useNativeTitleBar = true;
+    o.resizable = true;
+
+    browserWindow_ = o.launchAsync();
+    if (browserWindow_ != nullptr)
+        browser->grabKeyboardFocus();
+}
+
+void SculptSamplerAudioProcessorEditor::closeSampleBrowser()
+{
+    // Defer the window delete: this is invoked from a button callback inside the window's content.
+    juce::Component::SafePointer<juce::DialogWindow> w = browserWindow_;
+    browserWindow_ = nullptr;
+    juce::MessageManager::callAsync ([w]() mutable
+    {
+        if (w != nullptr)
+            delete w.getComponent();
+    });
 }

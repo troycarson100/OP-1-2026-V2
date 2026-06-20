@@ -334,18 +334,20 @@ void SculptSamplerAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer
                      buffer.getNumSamples());
 }
 
-bool SculptSamplerAudioProcessor::loadAudioFileIntoTrack (int trackIndex, const juce::File& file)
+// Decode + resample one file and append it to the project bank. Returns its slot index, or -1.
+// Caller must suspend audio processing around this (it mutates the bank).
+int SculptSamplerAudioProcessor::appendFileToBank (const juce::File& file)
 {
-    if (trackIndex < 0 || trackIndex >= sculpt::kNumTracks || ! file.existsAsFile())
-        return false;
+    if (! file.existsAsFile())
+        return -1;
 
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager_.createReaderFor (file));
     if (reader == nullptr)
-        return false;
+        return -1;
 
     const juce::int64 srcFrames64 = reader->lengthInSamples;
     if (srcFrames64 < 1)
-        return false;
+        return -1;
 
     const double hostSr = getSampleRate() > 0.0 ? getSampleRate() : reader->sampleRate;
     const double fileSr = reader->sampleRate > 0.0 ? reader->sampleRate : hostSr;
@@ -354,14 +356,14 @@ bool SculptSamplerAudioProcessor::loadAudioFileIntoTrack (int trackIndex, const 
     const juce::int64 maxSrcFrames = static_cast<juce::int64> (std::ceil (fileSr * importSec));
     const juce::int64 srcToRead64  = std::min (srcFrames64, maxSrcFrames);
     if (srcToRead64 < 1)
-        return false;
+        return -1;
 
     const juce::int64 maxHostFrames64 = static_cast<juce::int64> (std::ceil (hostSr * importSec));
     const juce::int64 outFrames64     = static_cast<juce::int64> (std::ceil (static_cast<double> (srcToRead64) * hostSr / fileSr));
     const juce::int64 outCapped64     = std::min (outFrames64, maxHostFrames64);
     if (outCapped64 < 1
         || outCapped64 > static_cast<juce::int64> (std::numeric_limits<int>::max () - 4))
-        return false;
+        return -1;
 
     const int srcRead = static_cast<int> (std::min (srcToRead64,
                                                     static_cast<juce::int64> (std::numeric_limits<int>::max () - 4)));
@@ -372,7 +374,7 @@ bool SculptSamplerAudioProcessor::loadAudioFileIntoTrack (int trackIndex, const 
     reader->read (&srcBuf, 0, srcRead, 0, true, true);
 
     if (outFrames < 1)
-        return false;
+        return -1;
 
     std::vector<float> L (static_cast<size_t> (outFrames));
     std::vector<float> R (static_cast<size_t> (outFrames));
@@ -396,10 +398,57 @@ bool SculptSamplerAudioProcessor::loadAudioFileIntoTrack (int trackIndex, const 
         R[static_cast<size_t> (i)] = r0 + (r1 - r0) * frac;
     }
 
+    const juce::String stem = file.getFileNameWithoutExtension();
+    return engine_.addBankSample (L.data(), R.data(), outFrames, stem.toRawUTF8());
+}
+
+// Point a track's Sample knob at an absolute bank slot. The knob scans only loaded samples
+// (dense slots 0..count-1), so the normalized value is slot / (count-1).
+void SculptSamplerAudioProcessor::pointTrackAtBankSlot (int trackIndex, int slot)
+{
+    if (slot < 0)
+        return;
+    const int count = engine_.getBankSampleCount();
+    const float slotNorm = (count > 1)
+        ? static_cast<float> (slot) / static_cast<float> (count - 1) : 0.0f;
+    if (auto* p = apvts_.getParameter (bridge::paramIdString (trackIndex, sculpt::ParameterId::MaterialSampleSlot)))
+        p->setValueNotifyingHost (slotNorm);
+}
+
+bool SculptSamplerAudioProcessor::loadAudioFileIntoTrack (int trackIndex, const juce::File& file)
+{
+    if (trackIndex < 0 || trackIndex >= sculpt::kNumTracks)
+        return false;
+
     suspendProcessing (true);
-    engine_.replaceTrackMaterialStereo (trackIndex, L.data(), R.data(), outFrames);
+    const int slot = appendFileToBank (file);
     suspendProcessing (false);
-    return true;
+
+    if (slot >= 0)
+        pointTrackAtBankSlot (trackIndex, slot);
+    return slot >= 0;
+}
+
+int SculptSamplerAudioProcessor::loadAudioFilesIntoBank (const juce::Array<juce::File>& files, int trackToAssign)
+{
+    suspendProcessing (true);
+    int firstSlot = -1;
+    int loaded    = 0;
+    for (const auto& f : files)
+    {
+        const int slot = appendFileToBank (f);
+        if (slot >= 0)
+        {
+            if (firstSlot < 0)
+                firstSlot = slot;
+            ++loaded;
+        }
+    }
+    suspendProcessing (false);
+
+    if (firstSlot >= 0 && trackToAssign >= 0 && trackToAssign < sculpt::kNumTracks)
+        pointTrackAtBankSlot (trackToAssign, firstSlot);
+    return loaded;
 }
 
 juce::AudioProcessorEditor* SculptSamplerAudioProcessor::createEditor()

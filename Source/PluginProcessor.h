@@ -110,6 +110,7 @@ namespace bridge
             case P::MaterialMachine: suffix = "materialMachine"; break;
             case P::MaterialSampleMode: suffix = "materialSampleMode"; break;
             case P::MaterialSliceCount: suffix = "materialSliceCount"; break;
+            case P::MaterialSampleSlot: suffix = "materialSampleSlot"; break;
             default: break;
         }
 
@@ -161,10 +162,16 @@ public:
     // reload; saved in plugin state. When false, host tempo (if any) updates manualBpm each block.
     void applyUserBpm (double bpm);
 
-    // Decodes WAV/AIFF/etc. into the selected track's material buffer (not RT).
+    // Decodes WAV/AIFF/etc. into the project sample bank (not RT). Single-file form appends one
+    // sample and points the track's Sample knob at it; batch form loads many at once and points
+    // trackToAssign at the first. Returns success / count loaded.
     bool loadAudioFileIntoTrack (int trackIndex, const juce::File& file);
+    int  loadAudioFilesIntoBank (const juce::Array<juce::File>& files, int trackToAssign);
 
 private:
+    int  appendFileToBank (const juce::File& file);
+    void pointTrackAtBankSlot (int trackIndex, int slot);
+
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void buildParameterLinks();
     void syncParametersToEngine();

@@ -14,10 +14,10 @@ namespace
         { ParameterId::MaterialLevel, ParameterId::LoopStart, ParameterId::LoopEnd,
           ParameterId::MaterialPlayhead, ParameterId::TapeSpeed, ParameterId::MaterialPitchScale,
           ParameterId::MaterialPitchKey, ParameterId::MaterialLoopXfade },
-        // Page 2: Grid Snap, Grid Div, Time Mode, Root BPM, Capture Arm, Wave Zoom, Sample Mode, Slices
+        // Page 2: Grid Snap, Grid Div, Time Mode, Root BPM, Capture Arm, Wave Zoom, Sample Mode, Sample Slot
         { ParameterId::LoopSnapGrid, ParameterId::MaterialGridDivision, ParameterId::MaterialTimeMode,
           ParameterId::SampleRootBpm, ParameterId::CaptureArm, ParameterId::MaterialWaveZoom,
-          ParameterId::MaterialSampleMode, ParameterId::MaterialSliceCount },
+          ParameterId::MaterialSampleMode, ParameterId::MaterialSampleSlot },
     };
 
     // Granular: two 8-encoder banks.

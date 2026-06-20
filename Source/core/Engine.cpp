@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 #include <type_traits>
@@ -567,11 +568,25 @@ void Engine::setCaptureArmed (int trackIndex, bool armed)
         tracks_[static_cast<size_t> (trackIndex)].setCaptureArmed (armed);
 }
 
+int Engine::addBankSample (const float* left, const float* right, int numFrames, const char* name)
+{
+    return sampleBank_.addSample (left, right, numFrames, name);
+}
+
+void Engine::loadBankSlot (int slot, const float* left, const float* right, int numFrames, const char* name)
+{
+    sampleBank_.loadSlot (slot, left, right, numFrames, name);
+}
+
 void Engine::replaceTrackMaterialStereo (int trackIndex, const float* left, const float* right, int numFrames)
 {
     if (trackIndex >= 0 && trackIndex < kNumTracks)
         tracks_[static_cast<size_t> (trackIndex)].replaceMaterialStereo (left, right, numFrames);
 }
+
+int         Engine::getBankSampleCount() const          { return sampleBank_.count(); }
+const char* Engine::getBankSampleName (int slot) const  { return sampleBank_.getName (slot); }
+bool        Engine::isBankSampleLoaded (int slot) const { return sampleBank_.isLoaded (slot); }
 
 void Engine::setHostTempo (double bpm)       { clock_.setBpm (bpm); }
 void Engine::setHostPlaying (bool playing)   { transport_.setPlaying (playing); }
@@ -711,6 +726,14 @@ void Engine::processChunk (float** inputs, float** outputs,
         const auto ts = static_cast<size_t> (t);
         auto& track = tracks_[ts];
 
+        // Route each track to its bank slot (effective includes p-lock overrides so slot can differ
+        // per step). nullptr = bank slot empty, falls back to the track's own MaterialSource buffer.
+        {
+            const float slotN = params_.effective (t, ParameterId::MaterialSampleSlot);
+            const int   slotIdx = map::materialSampleSlot (slotN, std::max (1, sampleBank_.count()));
+            track.setExternalSampleBuffer (sampleBank_.getBuffer (slotIdx));
+        }
+
         const bool playheadScrub = materialPlayheadScrubActive_[ts].load (std::memory_order_relaxed);
         track.updateParameters (params_, t, playheadScrub, bpmUse, granularTiming, sampleRate_);
         track.process (busL_[ts].data(), busR_[ts].data(), numSamples);
@@ -847,6 +870,22 @@ void Engine::updateScreenModel()
         screen_.macroValues[static_cast<size_t> (m)] = macros_.getMacro (m);
 
     const int selected = screen_.selectedTrack;
+
+    screen_.bankSampleCount = sampleBank_.count();
+
+    // Sample label for the active pool slot on the selected track: "A1 name", or "A1 (empty)".
+    {
+        const float slotN   = params_.effective (selected, ParameterId::MaterialSampleSlot);
+        const int   slotIdx = map::materialSampleSlot (slotN, std::max (1, sampleBank_.count()));
+        char id[8];
+        SampleBank::formatId (slotIdx, id, sizeof (id));
+        const char* bankName = sampleBank_.getName (slotIdx);
+        if (bankName && bankName[0] != '\0')
+            std::snprintf (screen_.materialSampleName, sizeof (screen_.materialSampleName), "%s %s", id, bankName);
+        else
+            std::snprintf (screen_.materialSampleName, sizeof (screen_.materialSampleName), "%s (empty)", id);
+    }
+
     screen_.selectedTrackMaterialTimeMode01 =
         params_.effective (selected, ParameterId::MaterialTimeMode);
     screen_.selectedTrackTapeSpeedSnap01 =
@@ -1021,7 +1060,7 @@ void Engine::updateScreenModel()
 const SampleBuffer& Engine::getTrackMaterialBuffer (int trackIndex) const
 {
     const int ti = (trackIndex < 0) ? 0 : (trackIndex >= kNumTracks ? kNumTracks - 1 : trackIndex);
-    return tracks_[static_cast<size_t> (ti)].getMaterial().getBuffer();
+    return tracks_[static_cast<size_t> (ti)].getMaterial().getActiveBuffer();
 }
 
 void Engine::fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* outEnvelope,
@@ -1034,7 +1073,7 @@ void Engine::fillMaterialWaveformEnvelope (int trackIndex, int numBins, float* o
         outEnvelope[b] = 0.0f;
 
     const int ti = (trackIndex < 0) ? 0 : (trackIndex >= kNumTracks ? kNumTracks - 1 : trackIndex);
-    const SampleBuffer& buf = tracks_[static_cast<size_t> (ti)].getMaterial().getBuffer();
+    const SampleBuffer& buf = tracks_[static_cast<size_t> (ti)].getMaterial().getActiveBuffer();
     const int           frames = buf.getNumFrames();
     const int           channels = buf.getNumChannels();
     if (frames < 1 || channels < 1)

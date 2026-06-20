@@ -60,7 +60,7 @@ void Track::triggerWithWarpPlayhead (float materialPlayhead01, float loopStart01
     ignoreStoppedPlayheadSeek_ = false;
     auto& tape = engine_.getTape();
     tape.stop();
-    const int matFrames = material_.getBuffer().getNumFrames();
+    const int matFrames = material_.getActiveBuffer().getNumFrames();
     tape.seekNormalized (materialPlayhead01, matFrames, loopStart01, loopEnd01);
     tape.start();
     engine_.getGranular().setActive (true);
@@ -148,7 +148,7 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     {
         const int   gridN   = map::materialGridDivisions (get (ParameterId::MaterialGridDivision));
         const float gridBpm = map::sampleRootBpm (get (ParameterId::SampleRootBpm));
-        const int   gFrames = material_.getBuffer().getNumFrames();
+        const int   gFrames = material_.getActiveBuffer().getNumFrames();
         const float gDurSec = engineSampleRate > 1.0e-6 ? static_cast<float> (gFrames / engineSampleRate) : 0.0f;
         map::snapLoopPair01 (loopLo, loopHi, map::materialGridStep01 (gridN, gridBpm, gDurSec));
     }
@@ -173,7 +173,7 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     if (materialPlayheadScrub)
         ignoreStoppedPlayheadSeek_ = false;
 
-    const int matFrames = material_.getBuffer().getNumFrames();
+    const int matFrames = material_.getActiveBuffer().getNumFrames();
     const bool seekTapeToPlayhead = materialPlayheadScrub
                                     || (! playing_ && ! ignoreStoppedPlayheadSeek_);
     if (seekTapeToPlayhead)
@@ -315,7 +315,7 @@ void Track::process (float* outL, float* outR, int numSamples)
         return;
     }
 
-    engine_.process (material_.getBuffer(), outL, outR, numSamples);
+    engine_.process (material_.getActiveBuffer(), outL, outR, numSamples);
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -333,7 +333,7 @@ float Track::getGrainActivity() const
 
 float Track::getTapePositionNormalized() const
 {
-    return engine_.getTape().getPositionNormalized (material_.getBuffer().getNumFrames());
+    return engine_.getTape().getPositionNormalized (material_.getActiveBuffer().getNumFrames());
 }
 
 } // namespace sculpt

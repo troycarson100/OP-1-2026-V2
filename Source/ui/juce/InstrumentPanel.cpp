@@ -6,6 +6,7 @@
 #include "../SpaceTimeFormat.h"
 #include "../../core/FilterScales.h"
 #include "../../core/ParameterIds.h"
+#include "../../audio/SampleBank.h"
 #include "../../modulation/SyncDivision.h"
 #include "../../util/GrainPatternBank.h"
 #include "../../util/GrainPitchScales.h"
@@ -413,6 +414,15 @@ namespace
                 return juce::String (juce::roundToInt (sculpt::map::loopFadeSeconds (v) * 1000.0f)) + " ms";
             case P::MaterialGridDivision:
                 return "1/" + juce::String (sculpt::map::materialGridDivisions (v));
+            case P::MaterialSampleSlot:
+            {
+                const int slot = sculpt::map::materialSampleSlot (v, std::max (1, screen.bankSampleCount));
+                char id[8];
+                sculpt::SampleBank::formatId (slot, id, sizeof (id));
+                if (screen.bankSampleCount <= 0)
+                    return "--";
+                return juce::String (id);
+            }
             case P::FilterMode:
                 return (v > 0.5f) ? "Ring" : "LP/BP/HP";
             case P::TapeSpeed:
@@ -1066,6 +1076,15 @@ void InstrumentPanel::paint (juce::Graphics& g)
         g.fillRoundedRectangle (wfArea, 3.0f);
         if (materialPage)
         {
+            // Sample name label in the top-left of the waveform area.
+            if (screen.materialSampleName[0] != '\0')
+            {
+                g.setColour (kText.withAlpha (0.72f));
+                g.setFont (juce::FontOptions (10.5f));
+                g.drawText (juce::String (screen.materialSampleName),
+                            wfArea.withTrimmedBottom (wfArea.getHeight() - 14.0f).reduced (4.0f, 1.0f),
+                            juce::Justification::centredLeft, true);
+            }
             drawMaterialLoopShade (g, wfArea, screen.materialLoopStart01, screen.materialLoopEnd01,
                                    screen.materialViewStart01, screen.materialViewEnd01);
             drawMaterialTimeGrid (g, wfArea, screen);

@@ -62,6 +62,10 @@ public:
     TrackEngine&       getEngine()       { return engine_; }
     const TrackEngine& getEngine() const { return engine_; }
 
+    // Set which bank buffer this track plays (Engine calls each block from MaterialSampleSlot).
+    // nullptr = fall back to owned MaterialSource buffer. RT-safe: pointer assignment only.
+    void setExternalSampleBuffer (const SampleBuffer* buf) { material_.setExternalBuffer (buf); }
+
     // Message thread: replaces material audio (used after decoding a file).
     void replaceMaterialStereo (const float* left, const float* right, int numFrames);
 

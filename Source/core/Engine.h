@@ -11,6 +11,7 @@
 #include "StepSequencer.h"
 #include "../audio/Track.h"
 #include "../audio/SampleBuffer.h"
+#include "../audio/SampleBank.h"
 #include "../audio/Mixer.h"
 #include "../audio/Metronome.h"
 #include "../audio/SpaceSendBus.h"
@@ -112,8 +113,19 @@ public:
     void captureToTrack (int trackIndex, const float** inputs, int numChannels, int numSamples);
     void setCaptureArmed (int trackIndex, bool armed);
 
-    // Message thread only (call with audio processing suspended).
+    // Append a named sample to the project pool. Returns its slot index (Elektron A1, A2, …), or
+    // -1 if the pool is full. Message thread only (audio must be suspended). name may be nullptr.
+    int  addBankSample (const float* left, const float* right, int numFrames, const char* name);
+
+    // State restore: place a sample into a specific absolute pool slot. Message thread only.
+    void loadBankSlot (int slot, const float* left, const float* right, int numFrames, const char* name);
+
+    // Replace one track's OWN material buffer (placeholder/capture path, not the shared pool).
     void replaceTrackMaterialStereo (int trackIndex, const float* left, const float* right, int numFrames);
+
+    int         getBankSampleCount() const;
+    const char* getBankSampleName (int slot) const;
+    bool        isBankSampleLoaded (int slot) const;
 
     // Host bridge inputs (values only - no host types).
     void setHostTempo (double bpm);
@@ -173,6 +185,7 @@ private:
     void advanceStepSequencer (double samplesPerBeat, int numSamples);
 
     ParameterState params_;
+    SampleBank     sampleBank_;
     Clock          clock_;
     Transport      transport_;
     SceneManager   sceneManager_;
