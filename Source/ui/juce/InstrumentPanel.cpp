@@ -423,6 +423,14 @@ namespace
                     return "--";
                 return juce::String (id);
             }
+            case P::MaterialSampleMode:
+                switch (sculpt::map::materialSampleModeIndex (v))
+                {
+                    case 1:  return "Loop Fwd";
+                    case 2:  return "Loop Rev";
+                    case 3:  return "Loop Fwd/Bk";
+                    default: return "1-Shot";
+                }
             case P::FilterMode:
                 return (v > 0.5f) ? "Ring" : "LP/BP/HP";
             case P::TapeSpeed:
@@ -611,6 +619,73 @@ namespace
         }
     }
 
+    // LP/BP/HP mode: Pro-Q3-style filter-response curve over a live spectrum analyzer, with a
+    // draggable-looking cutoff node. All numbers (curve, spectrum, node) come precomputed from the
+    // engine's ScreenModel — this only plots them.
+    void drawFilterResponse (juce::Graphics& g, juce::Rectangle<int> areaInt,
+                             const sculpt::ScreenModel& screen)
+    {
+        const auto  area = areaInt.toFloat();
+        const float x0 = area.getX(), y0 = area.getY(), w = area.getWidth(), h = area.getHeight();
+        if (w < 2.0f || h < 2.0f)
+            return;
+
+        // Log-frequency grid (matches the engine's 20 Hz..20 kHz axis) + 0 dB reference line.
+        const float fLo = 20.0f, fHi = 20000.0f;
+        const float logSpan = std::log (fHi / fLo);
+        g.setColour (kText.withAlpha (0.12f));
+        for (float fHz : { 100.0f, 1000.0f, 10000.0f })
+            g.drawVerticalLine (juce::roundToInt (x0 + w * (std::log (fHz / fLo) / logSpan)), y0, y0 + h);
+        g.setColour (kText.withAlpha (0.10f));
+        g.drawHorizontalLine (juce::roundToInt (y0 + h * 0.5f), x0, x0 + w);
+
+        // Spectrum analyzer (filled, behind the curve).
+        {
+            constexpr int n = sculpt::ScreenModel::kFilterSpectrumBins;
+            juce::Path p;
+            p.startNewSubPath (x0, y0 + h);
+            for (int i = 0; i < n; ++i)
+            {
+                const float x = x0 + w * static_cast<float> (i) / static_cast<float> (n - 1);
+                const float v = juce::jlimit (0.0f, 1.0f, screen.filterSpectrum[static_cast<size_t> (i)]);
+                p.lineTo (x, y0 + h * (1.0f - v));
+            }
+            p.lineTo (x0 + w, y0 + h);
+            p.closeSubPath();
+            g.setColour (kAccent.withAlpha (0.16f));
+            g.fillPath (p);
+        }
+
+        // Filter response curve (subtle fill + bright stroke).
+        {
+            constexpr int n = sculpt::ScreenModel::kFilterCurveBins;
+            juce::Path line;
+            for (int i = 0; i < n; ++i)
+            {
+                const float x = x0 + w * static_cast<float> (i) / static_cast<float> (n - 1);
+                const float v = juce::jlimit (0.0f, 1.0f, screen.filterResponse[static_cast<size_t> (i)]);
+                const float y = y0 + h * (1.0f - v);
+                if (i == 0) line.startNewSubPath (x, y); else line.lineTo (x, y);
+            }
+            juce::Path fill = line;
+            fill.lineTo (x0 + w, y0 + h);
+            fill.lineTo (x0, y0 + h);
+            fill.closeSubPath();
+            g.setColour (kAccent.withAlpha (0.10f));
+            g.fillPath (fill);
+            g.setColour (kAccent.withAlpha (0.95f));
+            g.strokePath (line, juce::PathStrokeType (1.6f));
+        }
+
+        // Cutoff node (X = frequency, Y = curve height at cutoff).
+        const float nx = x0 + w * juce::jlimit (0.0f, 1.0f, screen.filterCutoffX01);
+        const float ny = y0 + h * (1.0f - juce::jlimit (0.0f, 1.0f, screen.filterNodeY01));
+        g.setColour (kAccent);
+        g.fillEllipse (nx - 3.5f, ny - 3.5f, 7.0f, 7.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.9f));
+        g.drawEllipse (nx - 3.5f, ny - 3.5f, 7.0f, 7.0f, 1.2f);
+    }
+
     void drawFilterBands (juce::Graphics& g, juce::Rectangle<int> area,
                           const sculpt::ScreenModel& screen)
     {
@@ -623,10 +698,7 @@ namespace
 
         if (! screen.filterSpectralMode)
         {
-            // LPF / BP / HP mode — show a static label
-            g.setColour (kText.withAlpha (0.45f));
-            g.setFont (juce::FontOptions (12.0f));
-            g.drawText ("LP / BP / HP", area.toFloat(), juce::Justification::centred, false);
+            drawFilterResponse (g, area, screen);
             return;
         }
 

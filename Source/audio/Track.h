@@ -4,7 +4,6 @@
 #include "SampleRecorder.h"
 #include "TrackEngine.h"
 #include "Envelope.h"
-#include "SliceMap.h"
 
 namespace sculpt
 {
@@ -33,9 +32,6 @@ public:
     // gets this block. Phase 4 p-locks will pass a per-step start position here.
     void requestSamplerTrig (float pos01 = -1.0f) { samplerTrigPending_ = true; samplerTrigPos01_ = pos01; }
 
-    // Restart the round-robin slice cursor (called when the sequencer starts, for predictable patterns).
-    void resetSliceCursor() { sliceCursor_ = 0; }
-
     // Live input capture into the material buffer.
     void captureInput (const float* const* inputs, int numChannels, int numSamples);
     void setCaptureArmed (bool armed);
@@ -47,7 +43,7 @@ public:
     // granularTiming: beat at chunk start, samples/beat, etc. (must match Engine clock chunk).
     void updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub,
                            double hostBpm, const GranularBlockTiming& granularTiming,
-                           double engineSampleRate);
+                           double engineSampleRate, int numSamples);
 
     // Overwrites outL/outR with this track's output.
     void process (float* outL, float* outR, int numSamples);
@@ -91,17 +87,15 @@ private:
     // Active sample's native tempo (warp/sync), pushed by Engine each block from the bank.
     float activeSampleRootBpm_ = 120.0f;
 
-    // Loop Start Follow: snap the playhead to Loop Start once it stops moving. Tracks the last
-    // Loop Start value and whether a settle-snap is still pending for the current resting position.
-    float followLoopStartLast_ = -1.0f;
-    bool  followSeekPending_    = false;
+    // (Slice mode removed; SampleMode now selects One-Shot / Loop direction in updateParameters.)
 
-    // Slice mode: round-robin cursor + the region the current one-shot is playing (a slice, persisted
-    // across blocks so the tape keeps the slice bounds between trigs instead of the loop knobs).
-    SliceMap sliceMap_;
-    int   sliceCursor_     = 0;
-    float samplerRegionLo_ = 0.0f;
-    float samplerRegionHi_ = 1.0f;
+    // Loop Start Follow: snap the playhead to Loop Start on each change, but fire exactly ONCE per
+    // change "burst" — fire on the first changed block, then lock out until the value has been stable
+    // for a short window (re-arm). This gives a crisp single splice for a stepped mod (random S&H)
+    // and avoids machine-gunning retriggers while a slewed/continuous value is still moving.
+    float followLoopStartLast_  = -1.0f;
+    bool  followArmed_          = true; // ready to fire on the next Loop Start change
+    int   followStableSamples_  = 0;    // samples the value has been stable (re-arm timer)
 };
 
 } // namespace sculpt

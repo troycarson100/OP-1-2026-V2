@@ -51,6 +51,11 @@ public:
     // Overwrites outL/outR with the processed chain. numSamples <= kMaxBlockSize.
     void process (const SampleBuffer& material, float* outL, float* outR, int numSamples);
 
+    // Post-filter mono tap (filled each process()) for the Filter-page spectrum analyzer. The
+    // Engine reads this only for the selected track. RT-safe pointer/length read.
+    const float* filterTapMono() const { return filterTap_.data(); }
+    int          filterTapLen()  const { return filterTapLen_; }
+
 private:
     TapePlayer           tape_;
     GranularEngine       granular_;
@@ -66,6 +71,9 @@ private:
 
     std::array<float, kMaxBlockSize> dryL_ {}, dryR_ {};
     std::array<float, kMaxBlockSize> grainL_ {}, grainR_ {};
+
+    std::array<float, kMaxBlockSize> filterTap_ {};   // post-filter mono, for the analyzer
+    int                              filterTapLen_ = 0;
 };
 
 } // namespace sculpt

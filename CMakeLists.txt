@@ -24,6 +24,7 @@ endif()
 
 juce_add_plugin(SculptSampler
     COMPANY_NAME "SculptLab"
+    BUNDLE_ID com.SculptLab.SculptSampler   # stable id: macOS keys file permissions to it
     PLUGIN_MANUFACTURER_CODE Sclb
     PLUGIN_CODE Scs4
     FORMATS AU VST3 Standalone
@@ -70,6 +71,8 @@ target_sources(SculptSampler PRIVATE
     Source/audio/SpaceStage.cpp
     Source/audio/SpaceSendBus.cpp
     Source/audio/SampleBank.cpp
+    Source/audio/SpectrumAnalyzer.cpp
+    Source/util/RealFFT.cpp
     Source/audio/SpaceDelay.cpp
     Source/audio/HallReverb.cpp
     Source/audio/AllpassDelay.cpp
@@ -106,6 +109,22 @@ target_link_libraries(SculptSampler
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
+
+# macOS: re-sign the Standalone app after each build with a stable self-signed identity so the OS
+# remembers granted folder-access permissions instead of re-prompting every rebuild (ad-hoc, the
+# default, is keyed by the changing binary hash). One-time setup: scripts/setup-macos-codesign.sh.
+if(APPLE)
+    set(SCULPT_CODESIGN_IDENTITY "SculptSampler Dev"
+        CACHE STRING "codesign identity used to stabilise macOS file-access permissions")
+    if(TARGET SculptSampler_Standalone)
+        add_custom_command(TARGET SculptSampler_Standalone POST_BUILD
+            COMMAND "${CMAKE_COMMAND}"
+                    "-DSCULPT_APP=$<TARGET_BUNDLE_DIR:SculptSampler_Standalone>"
+                    "-DSCULPT_ID=${SCULPT_CODESIGN_IDENTITY}"
+                    -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CodesignStandalone.cmake"
+            VERBATIM)
+    endif()
+endif()
 
 option(SCULPT_BUILD_TESTS "Build portable engine unit tests" OFF)
 

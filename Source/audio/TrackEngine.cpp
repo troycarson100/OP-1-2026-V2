@@ -76,6 +76,11 @@ void TrackEngine::process (const SampleBuffer& material, float* outL, float* out
     else
         filter_.process (outL, outR, n);
 
+    // Tap the post-filter signal (mono) for the Filter-page spectrum analyzer.
+    for (int i = 0; i < n; ++i)
+        filterTap_[static_cast<size_t> (i)] = 0.5f * (outL[i] + outR[i]);
+    filterTapLen_ = n;
+
     color_.process (outL, outR, n);
     // Reverb/delay are applied globally via the Engine's SpaceSendBus (per-track sends), not here.
     mixBus_.process (outL, outR, n);

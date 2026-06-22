@@ -188,6 +188,15 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     bankButton_.setTooltip ("Open the project sample bank browser: mark multiple files, load them all at once.");
     bankButton_.onClick = [this] { openSampleBrowser(); };
 
+    addAndMakeVisible (saveButton_);
+    saveButton_.setTooltip ("Save the whole project to a .sculpt file: parameters, sequencer patterns, "
+                            "scenes, and every loaded sample.");
+    saveButton_.onClick = [this] { saveProject(); };
+
+    addAndMakeVisible (openButton_);
+    openButton_.setTooltip ("Open a .sculpt project file, restoring parameters, sequences, scenes, and samples.");
+    openButton_.onClick = [this] { openProject(); };
+
     addAndMakeVisible (spaceClearButton_);
     spaceClearButton_.setTooltip ("Clears delay and reverb buffers on the selected track (next audio block).");
     spaceClearButton_.onClick = [this]
@@ -198,9 +207,8 @@ SculptSamplerAudioProcessorEditor::SculptSamplerAudioProcessorEditor (SculptSamp
     helpLabel_.setColour (juce::Label::textColourId, kText.withAlpha (0.88f));
     helpLabel_.setMinimumHorizontalScale (1.0f);
     helpLabel_.setFont (juce::FontOptions (11.0f));
-    helpLabel_.setText ("Drag WAV/AIFF/FLAC/OGG or use LOAD to add to the project sample bank (A1, A2...). "
-                        "Turn the Sample knob to pick a bank slot; p-lock it per step. "
-                        "Scenes A-D: enable SAVE then tap a letter to store.",
+    helpLabel_.setText ("Drag audio or use LOAD/BANK to add to the sample pool (A1, A2...). "
+                        "SAVE / OPEN store and recall the whole project (params, sequences, samples) as a .sculpt file.",
                         juce::dontSendNotification);
     helpLabel_.setTooltip (
         "Material page: push Input Capture past halfway to arm recording from the plugin input while the track plays "
@@ -448,20 +456,18 @@ void SculptSamplerAudioProcessorEditor::rebuildPageControls()
                 control.slider->updateText();
                 spaceTimeSlider_ = control.slider.get();
             }
-            // Sampler controls: show readable values (mode name / slice count) instead of 0..1.
+            // Sampler playback mode: show the mode name (choice param -> slider value is the index).
             else if (id == sculpt::ParameterId::MaterialSampleMode)
             {
                 control.slider->textFromValueFunction = [] (double value)
                 {
-                    return juce::String (value > 0.5 ? "Slice" : "1-Shot");
-                };
-                control.slider->updateText();
-            }
-            else if (id == sculpt::ParameterId::MaterialSliceCount)
-            {
-                control.slider->textFromValueFunction = [] (double value)
-                {
-                    return juce::String (sculpt::map::materialSliceCount (static_cast<float> (value)));
+                    switch (juce::roundToInt (value))
+                    {
+                        case 1:  return juce::String ("Loop Fwd");
+                        case 2:  return juce::String ("Loop Rev");
+                        case 3:  return juce::String ("Loop Fwd/Bk");
+                        default: return juce::String ("1-Shot");
+                    }
                 };
                 control.slider->updateText();
             }
@@ -698,12 +704,17 @@ void SculptSamplerAudioProcessorEditor::resized()
     for (int t = 0; t < sculpt::kNumTracks; ++t)
         trackButtons_[static_cast<size_t> (t)].setBounds (trackRow.removeFromLeft (trackCell).reduced (3));
 
-    muteButton_.setBounds (actionRow.removeFromLeft (70).reduced (0, 6));
+    muteButton_.setBounds (actionRow.removeFromLeft (64).reduced (0, 6));
     actionRow.removeFromLeft (6);
-    loadSampleButton_.setBounds (actionRow.removeFromLeft (72).reduced (0, 6));
+    loadSampleButton_.setBounds (actionRow.removeFromLeft (60).reduced (0, 6));
     actionRow.removeFromLeft (4);
-    bankButton_.setBounds (actionRow.removeFromLeft (72).reduced (0, 6));
-    spaceClearButton_.setBounds (actionRow.removeFromLeft (100).reduced (0, 6));
+    bankButton_.setBounds (actionRow.removeFromLeft (60).reduced (0, 6));
+    actionRow.removeFromLeft (4);
+    saveButton_.setBounds (actionRow.removeFromLeft (60).reduced (0, 6));
+    actionRow.removeFromLeft (4);
+    openButton_.setBounds (actionRow.removeFromLeft (60).reduced (0, 6));
+    actionRow.removeFromLeft (4);
+    spaceClearButton_.setBounds (actionRow.removeFromLeft (92).reduced (0, 6));
     helpLabel_.setBounds (actionRow.reduced (8, 6));
 
     // Remaining `area`: LCD + VALUE encoders. Split SELECT (left) vs instrument column.
@@ -837,5 +848,68 @@ void SculptSamplerAudioProcessorEditor::closeSampleBrowser()
     {
         if (w != nullptr)
             delete w.getComponent();
+    });
+}
+
+void SculptSamplerAudioProcessorEditor::saveProject()
+{
+    if (projectChooser_ != nullptr)
+        return;
+
+    juce::File dir = lastProjectDir_.isDirectory()
+                       ? lastProjectDir_
+                       : juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+
+    projectChooser_ = std::make_unique<juce::FileChooser> (
+        "Save project", dir.getChildFile ("Untitled.sculpt"), "*.sculpt");
+
+    constexpr auto flags = juce::FileBrowserComponent::saveMode
+                            | juce::FileBrowserComponent::canSelectFiles
+                            | juce::FileBrowserComponent::warnAboutOverwriting;
+
+    projectChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc)
+    {
+        const juce::File picked (fc.getResult());
+        if (picked != juce::File())
+        {
+            const juce::File out = picked.withFileExtension ("sculpt");
+            juce::MemoryBlock state;
+            processor_.getStateInformation (state);
+            if (out.replaceWithData (state.getData(), state.getSize()))
+                lastProjectDir_ = out.getParentDirectory();
+        }
+        projectChooser_.reset();
+    });
+}
+
+void SculptSamplerAudioProcessorEditor::openProject()
+{
+    if (projectChooser_ != nullptr)
+        return;
+
+    juce::File dir = lastProjectDir_.isDirectory()
+                       ? lastProjectDir_
+                       : juce::File::getSpecialLocation (juce::File::userMusicDirectory);
+
+    projectChooser_ = std::make_unique<juce::FileChooser> ("Open project", dir, "*.sculpt");
+
+    constexpr auto flags = juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles;
+
+    projectChooser_->launchAsync (flags, [this] (const juce::FileChooser& fc)
+    {
+        const juce::File picked (fc.getResult());
+        if (picked.existsAsFile())
+        {
+            juce::MemoryBlock state;
+            if (picked.loadFileAsData (state) && state.getSize() > 0)
+            {
+                processor_.setStateInformation (state.getData(), static_cast<int> (state.getSize()));
+                lastProjectDir_ = picked.getParentDirectory();
+                rebuildPageControls();   // re-bind knobs to the restored parameter values
+                resized();
+            }
+        }
+        projectChooser_.reset();
     });
 }

@@ -25,6 +25,9 @@ public:
     // Place PCM into a specific absolute slot (used by state restore). Message thread only.
     void loadSlot (int slot, const float* left, const float* right, int numFrames, const char* name, float rootBpm);
 
+    // Drop every sample (project reload). Message thread only; audio must be suspended.
+    void clear();
+
     // Returns the buffer for a loaded slot, or nullptr if the slot is empty.
     const SampleBuffer* getBuffer (int slot) const;
 

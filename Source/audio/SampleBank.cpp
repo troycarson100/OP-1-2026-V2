@@ -30,6 +30,18 @@ void SampleBank::loadSlot (int slot, const float* left, const float* right, int 
         count_ = slot + 1;
 }
 
+void SampleBank::clear()
+{
+    for (auto& s : slots_)
+    {
+        s.buffer.resize (0, 0);
+        s.name[0] = '\0';
+        s.rootBpm.store (120.0f, std::memory_order_relaxed);
+        s.loaded = false;
+    }
+    count_ = 0;
+}
+
 int SampleBank::addSample (const float* left, const float* right, int numFrames, const char* name, float rootBpm)
 {
     if (count_ >= kMaxSamples)

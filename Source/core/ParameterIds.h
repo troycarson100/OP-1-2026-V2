@@ -140,10 +140,10 @@ enum class ParameterId : int
     // end to avoid renumbering existing parameters / breaking saved state.
     MaterialMachine,
 
-    // Sampler playback mode: <=0.5 = OneShot (play the loop region once per trig); >0.5 = Slice
-    // (chop the sample into MaterialSliceCount equal slices and play one slice per step trig).
+    // Sampler playback mode (choice, see map::materialSampleModeIndex):
+    //   0 One-Shot, 1 Loop Forward, 2 Loop Reverse, 3 Loop Fwd/Back (ping-pong).
     MaterialSampleMode,
-    // Slice count for Slice mode (mapped to a musical set 1..64 via map::materialSliceCount).
+    // Vestigial (Slice mode removed); kept to avoid renumbering saved state.
     MaterialSliceCount,
 
     // Project sample bank slot selector (0..1 -> bank slot 0..kNumTracks-1). P-lockable: each step
@@ -474,7 +474,13 @@ namespace map
         return std::clamp (static_cast<int> (std::lround (clamp01 (n01) * static_cast<float> (numSlots - 1))), 0, numSlots - 1);
     }
 
-    // Slice count for Sampler Slice mode: musical set 1..64 (7 steps).
+    // Sampler playback mode: 0 One-Shot, 1 Loop Forward, 2 Loop Reverse, 3 Loop Fwd/Back.
+    inline int materialSampleModeIndex (float n01)
+    {
+        return std::clamp (static_cast<int> (std::lround (clamp01 (n01) * 3.0f)), 0, 3);
+    }
+
+    // Vestigial (Slice mode removed). Kept so old saved values still map without crashing.
     inline int materialSliceCount (float n01)
     {
         static constexpr int kCounts[7] = { 1, 2, 4, 8, 16, 32, 64 };
@@ -501,7 +507,9 @@ namespace map
     }
 
     inline float filterCutoffHz (float n)    { return 40.0f * std::pow (2.0f, n * 8.3f); }        // ~40Hz .. ~12.6kHz
-    inline float filterResonance (float n)   { return 0.5f + n * 9.0f; }                          // SVF Q
+    // SVF Q: exponential so the low half stays gentle and the top reaches self-oscillation
+    // (Q~28). 0->0.55, 0.5->~3.9, 1->~28. Shared by the audio path and the response-curve display.
+    inline float filterResonance (float n)   { return 0.55f * std::pow (51.0f, clamp01 (n)); }
     // Spectral: pole radius r in [0.92, 0.9998] — controls ring/decay time.
     // r = 0.92 → ~3ms ring at 44100; r = 0.9998 → ~1.1s ring.
     inline float spectralPoleRadius (float n) { return 0.92f + n * 0.0798f; }

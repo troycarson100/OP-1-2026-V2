@@ -113,6 +113,26 @@ ParameterId PageModel::parameterForSlot (Page page, int slot, int granularEncode
     return kPageParams[p][slot];
 }
 
+ParameterId PageModel::modDestinationForSlot (Page page, int enc)
+{
+    if (enc < 0 || enc >= kMaxModMappingEncoders)
+        return kEmpty;
+
+    if (page == Page::Material)
+    {
+        // Curated Material modulation destinations across both encoder sub-pages: the musical ones
+        // plus the new Sample Slot (random/LFO sample selection) and Sample Mode (playback dir).
+        static constexpr ParameterId kMaterialModDest[kMaxModMappingEncoders] = {
+            ParameterId::MaterialLevel, ParameterId::LoopStart, ParameterId::LoopEnd,
+            ParameterId::MaterialPlayhead, ParameterId::TapeSpeed, ParameterId::MaterialSampleSlot,
+            ParameterId::MaterialSampleMode, ParameterId::MaterialLoopXfade,
+        };
+        return kMaterialModDest[enc];
+    }
+
+    return parameterForSlot (page, enc);
+}
+
 int PageModel::parameterCount (Page page, int granularEncoderPage)
 {
     int count = 0;

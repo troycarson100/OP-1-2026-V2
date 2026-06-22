@@ -26,7 +26,7 @@ namespace
             return "S" + juce::String (slot + 1)
                    + (tgt == sculpt::ModSlotTarget::Amount ? " Amt" : " Rate");
         }
-        const auto id = sculpt::PageModel::parameterForSlot (page, enc);
+        const auto id = sculpt::PageModel::modDestinationForSlot (page, enc);
         if (id == sculpt::ParameterId::Count)
             return {};
         return juce::String (sculpt::parameterName (id));

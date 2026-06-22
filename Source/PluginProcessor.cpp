@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <cstring>
 #include <limits>
 #include <vector>
@@ -46,6 +47,16 @@ namespace
         a.add ("Dotted");
         a.add ("Triplet");
         a.add ("Free");
+        return a;
+    }
+
+    juce::StringArray makeSampleModeChoices()
+    {
+        juce::StringArray a;
+        a.add ("One-Shot");
+        a.add ("Loop Fwd");
+        a.add ("Loop Rev");
+        a.add ("Loop Fwd/Back");
         return a;
     }
 
@@ -120,6 +131,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
     const juce::StringArray keyChoices   = makeFilterKeyChoices();
     const juce::StringArray modeChoices  = makeFilterModeChoices();
     const juce::StringArray spaceTimeModeChoices = makeSpaceDelayTimeModeChoices();
+    const juce::StringArray sampleModeChoices     = makeSampleModeChoices();
 
     for (int i = 0; i < kNumParameters; ++i)
     {
@@ -156,10 +168,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout SculptSamplerAudioProcessor:
                          || id == ParameterId::LoopStartFollow)
                     layout.add (std::make_unique<juce::AudioParameterBool> (
                         juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
-                else if (id == ParameterId::SpaceFreeze || id == ParameterId::MaterialMachine
-                         || id == ParameterId::MaterialSampleMode)
+                else if (id == ParameterId::SpaceFreeze || id == ParameterId::MaterialMachine)
                     layout.add (std::make_unique<juce::AudioParameterBool> (
                         juce::ParameterID { pid, 1 }, pname, sculpt::parameterDefault (id) > 0.5f));
+                else if (id == ParameterId::MaterialSampleMode)
+                    addChoiceParam (layout, pid, pname, sampleModeChoices, id);
                 else if (id == ParameterId::SampleRootBpm)
                 {
                     auto attrs =
@@ -512,6 +525,51 @@ void SculptSamplerAudioProcessor::getStateInformation (juce::MemoryBlock& destDa
         engine_.saveSceneState (sceneBlob.data());
         writeBlob ("sculptSceneBlob", sceneBlob.data(), sceneBlob.size());
 
+        // Loaded bank samples (raw float PCM, channel-major) so a project reopens with the exact
+        // audio it had. gzip'd by writeBlob; this is a bounded message-thread copy, never the RT path.
+        {
+            std::vector<uint8_t> bank;
+            auto put  = [&bank] (const void* p, size_t n)
+            {
+                const auto* b = static_cast<const uint8_t*> (p);
+                bank.insert (bank.end(), b, b + n);
+            };
+            auto putI = [&put] (int32_t v) { put (&v, sizeof (v)); };
+            auto putF = [&put] (float v)   { put (&v, sizeof (v)); };
+
+            const size_t countPos = bank.size();
+            putI (0); // patched with the real slot count below
+
+            int32_t numWritten = 0;
+            const int count = engine_.getBankSampleCount();
+            for (int slot = 0; slot < count; ++slot)
+            {
+                if (! engine_.isBankSampleLoaded (slot))
+                    continue;
+                const int frames = engine_.getBankSampleFrames (slot);
+                const int chans  = std::max (1, engine_.getBankSampleChannels (slot));
+                if (frames <= 0)
+                    continue;
+
+                const char*   nm      = engine_.getBankSampleName (slot);
+                const int32_t nameLen = nm != nullptr ? static_cast<int32_t> (std::strlen (nm)) : 0;
+
+                putI (slot);
+                putI (frames);
+                putI (chans);
+                putF (engine_.getBankSampleRootBpm (slot));
+                putI (nameLen);
+                if (nameLen > 0)
+                    put (nm, static_cast<size_t> (nameLen));
+                for (int ch = 0; ch < chans; ++ch)
+                    if (const float* d = engine_.getBankSampleChannelData (slot, ch))
+                        put (d, static_cast<size_t> (frames) * sizeof (float));
+                ++numWritten;
+            }
+            std::memcpy (bank.data() + countPos, &numWritten, sizeof (numWritten));
+            writeBlob ("sculptBankBlob", bank.data(), bank.size());
+        }
+
         xml->setAttribute ("sculptMuteMask", static_cast<int> (engine_.getMuteMask()));
 
         copyXmlToBinary (*xml, destData);
@@ -565,6 +623,66 @@ void SculptSamplerAudioProcessor::setStateInformation (const void* data, int siz
             engine_.loadPatternState (blob.data(), blob.size());
         if (readBlob ("sculptSceneBlob", blob))
             engine_.loadSceneState (blob.data(), blob.size());
+
+        // Rebuild the sample pool from the saved PCM. Suspend audio: clearBank()/loadBankSlot()
+        // reallocate buffers the audio thread reads from.
+        std::vector<uint8_t> bankBlob;
+        if (readBlob ("sculptBankBlob", bankBlob))
+        {
+            const uint8_t* p   = bankBlob.data();
+            const uint8_t* end = p + bankBlob.size();
+            auto getI = [&p, end] (int32_t& v) -> bool
+            {
+                if (p + sizeof (v) > end) return false;
+                std::memcpy (&v, p, sizeof (v)); p += sizeof (v); return true;
+            };
+            auto getF = [&p, end] (float& v) -> bool
+            {
+                if (p + sizeof (v) > end) return false;
+                std::memcpy (&v, p, sizeof (v)); p += sizeof (v); return true;
+            };
+
+            suspendProcessing (true);
+            engine_.clearBank();
+
+            int32_t num = 0;
+            if (getI (num))
+            {
+                for (int i = 0; i < num; ++i)
+                {
+                    int32_t slot = 0, frames = 0, chans = 0, nameLen = 0;
+                    float   rootBpm = 120.0f;
+                    if (! (getI (slot) && getI (frames) && getI (chans) && getF (rootBpm) && getI (nameLen)))
+                        break;
+                    if (slot < 0 || frames <= 0 || chans < 1 || nameLen < 0
+                        || p + nameLen > end)
+                        break;
+
+                    char name[64] = {};
+                    std::memcpy (name, p, static_cast<size_t> (std::min (nameLen, 63)));
+                    p += nameLen;
+
+                    const size_t chBytes = static_cast<size_t> (frames) * sizeof (float);
+                    if (p + static_cast<size_t> (chans) * chBytes > end)
+                        break;
+
+                    std::vector<float> L (static_cast<size_t> (frames));
+                    std::memcpy (L.data(), p, chBytes);
+                    std::vector<float> R;
+                    const float* rptr = nullptr;
+                    if (chans > 1)
+                    {
+                        R.resize (static_cast<size_t> (frames));
+                        std::memcpy (R.data(), p + chBytes, chBytes);
+                        rptr = R.data();
+                    }
+                    p += static_cast<size_t> (chans) * chBytes;
+
+                    engine_.loadBankSlot (slot, L.data(), rptr, frames, name, rootBpm);
+                }
+            }
+            suspendProcessing (false);
+        }
 
         engine_.setMuteMask (static_cast<uint32_t> (xml->getIntAttribute ("sculptMuteMask", 0)));
     }

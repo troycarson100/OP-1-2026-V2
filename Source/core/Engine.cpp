@@ -80,6 +80,7 @@ void Engine::prepare (double sampleRate, int blockSize)
 
     modEngine_.prepare (sampleRate_);
     stepSeq_.prepare (sampleRate_);
+    filterAnalyzer_.prepare (sampleRate_);
 
     macros_.reset();
     prepared_ = true;
@@ -452,10 +453,7 @@ void Engine::applyPendingRequests()
         // Anchor tempo-synced modulation to this downbeat so synced LFOs reset/align with the pattern.
         transportBeatOrigin_ = clock_.getBeatPosition();
         for (int t = 0; t < kNumTracks; ++t)
-        {
-            tracks_[static_cast<size_t> (t)].resetSliceCursor(); // predictable slice order from step 0
             params_.clearStepOverrides (t);                       // start clean; trigs latch locks
-        }
     }
 
     if (masterCmd == 1)
@@ -596,6 +594,27 @@ void Engine::replaceTrackMaterialStereo (int trackIndex, const float* left, cons
 int         Engine::getBankSampleCount() const          { return sampleBank_.count(); }
 const char* Engine::getBankSampleName (int slot) const  { return sampleBank_.getName (slot); }
 bool        Engine::isBankSampleLoaded (int slot) const { return sampleBank_.isLoaded (slot); }
+void        Engine::clearBank()                         { sampleBank_.clear(); }
+
+int Engine::getBankSampleFrames (int slot) const
+{
+    const auto* b = sampleBank_.getBuffer (slot);
+    return b ? b->getNumFrames() : 0;
+}
+
+int Engine::getBankSampleChannels (int slot) const
+{
+    const auto* b = sampleBank_.getBuffer (slot);
+    return b ? b->getNumChannels() : 0;
+}
+
+const float* Engine::getBankSampleChannelData (int slot, int channel) const
+{
+    const auto* b = sampleBank_.getBuffer (slot);
+    if (b == nullptr || channel < 0 || channel >= b->getNumChannels())
+        return nullptr;
+    return b->getChannelData (channel);
+}
 float       Engine::getBankSampleRootBpm (int slot) const { return sampleBank_.getRootBpm (slot); }
 void        Engine::setBankSampleRootBpm (int slot, float bpm) { sampleBank_.setRootBpm (slot, bpm); }
 
@@ -750,6 +769,12 @@ void Engine::processChunk (float** inputs, float** outputs,
     // Step sequencer fires Sampler-track trigs for any step boundaries inside this chunk.
     advanceStepSequencer (granularTiming.samplesPerBeat, numSamples);
 
+    // Feed the Filter-page spectrum analyzer only for the selected track, only while that page is
+    // showing in LP/BP/HP mode (spectral mode has its own band display). Idle = no analyzer cost.
+    const int  analyzerTrack  = getSelectedTrack();
+    const bool analyzerActive = (selectedPage_ == Page::Filter)
+        && (params_.effective (analyzerTrack, ParameterId::FilterMode) <= 0.5f);
+
     for (int t = 0; t < kNumTracks; ++t)
     {
         const auto ts = static_cast<size_t> (t);
@@ -767,8 +792,11 @@ void Engine::processChunk (float** inputs, float** outputs,
         }
 
         const bool playheadScrub = materialPlayheadScrubActive_[ts].load (std::memory_order_relaxed);
-        track.updateParameters (params_, t, playheadScrub, bpmUse, granularTiming, sampleRate_);
+        track.updateParameters (params_, t, playheadScrub, bpmUse, granularTiming, sampleRate_, numSamples);
         track.process (busL_[ts].data(), busR_[ts].data(), numSamples);
+
+        if (analyzerActive && t == analyzerTrack)
+            filterAnalyzer_.push (track.getEngine().filterTapMono(), numSamples);
 
         float peak = trackPeaks_[ts] * 0.92f;
         for (int i = 0; i < numSamples; ++i)
@@ -1034,6 +1062,36 @@ void Engine::updateScreenModel()
     else
     {
         screen_.filterBandGains.fill (0.0f);
+
+        // LP/BP/HP mode: build the Pro-Q3-style response curve + copy the live analyzer, all in
+        // portable C++. Only while the Filter page is showing (the curve costs a few hundred maths).
+        if (selectedPage_ == Page::Filter)
+        {
+            const float cutoffHz = map::filterCutoffHz (params_.effective (selected, ParameterId::FilterCutoff));
+            const float q        = map::filterResonance (params_.effective (selected, ParameterId::FilterResonance));
+            const float mode01   = params_.effective (selected, ParameterId::FilterDecay);
+
+            const float fLo     = 20.0f;
+            const float fHi     = std::min (20000.0f, static_cast<float> (sampleRate_) * 0.5f);
+            const float logSpan = std::log (fHi / fLo);
+
+            auto dbToY = [] (float db) { return clamp01 (0.5f + db / 48.0f); };  // 0 dB at mid, +/-24 dB to edges
+
+            for (int i = 0; i < ScreenModel::kFilterCurveBins; ++i)
+            {
+                const float t  = static_cast<float> (i) / static_cast<float> (ScreenModel::kFilterCurveBins - 1);
+                const float hz = fLo * std::exp (logSpan * t);
+                screen_.filterResponse[static_cast<size_t> (i)] =
+                    dbToY (FilterStage::responseDb (hz, cutoffHz, q, mode01));
+            }
+
+            const float* sb = filterAnalyzer_.bins();
+            for (int i = 0; i < ScreenModel::kFilterSpectrumBins; ++i)
+                screen_.filterSpectrum[static_cast<size_t> (i)] = sb[i];
+
+            screen_.filterCutoffX01 = clamp01 (std::log (clampf (cutoffHz, fLo, fHi) / fLo) / logSpan);
+            screen_.filterNodeY01   = dbToY (FilterStage::responseDb (cutoffHz, cutoffHz, q, mode01));
+        }
     }
 
     if (selectedPage_ == Page::Mod)

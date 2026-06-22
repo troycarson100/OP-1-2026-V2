@@ -112,10 +112,19 @@ private:
 
     juce::TextButton loadSampleButton_ { "LOAD" };
     juce::TextButton bankButton_ { "BANK" };
+    juce::TextButton saveButton_ { "SAVE" };
+    juce::TextButton openButton_ { "OPEN" };
     juce::TextButton spaceClearButton_ { "CLR SPACE" };
     juce::Label      helpLabel_;
 
     std::unique_ptr<juce::FileChooser> sampleChooser_;
+
+    // Whole-project save/load: writes (and reads back) everything the plugin state holds — params,
+    // sequences, scenes, and the loaded samples — to a single .sculpt file the user picks.
+    std::unique_ptr<juce::FileChooser> projectChooser_;
+    juce::File                         lastProjectDir_;
+    void saveProject();
+    void openProject();
 
     // Custom multi-select sample browser (Elektron-style), shown in its own window.
     void openSampleBrowser();

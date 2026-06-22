@@ -15,6 +15,7 @@
 #include "../audio/Mixer.h"
 #include "../audio/Metronome.h"
 #include "../audio/SpaceSendBus.h"
+#include "../audio/SpectrumAnalyzer.h"
 #include "../util/SmoothedValue.h"
 #include "../modulation/EnvelopeFollower.h"
 #include "../modulation/MacroControls.h"
@@ -127,6 +128,14 @@ public:
     const char* getBankSampleName (int slot) const;
     bool        isBankSampleLoaded (int slot) const;
 
+    // Drop the whole pool (project reload). Message thread only; audio must be suspended.
+    void clearBank();
+
+    // Raw read-out of a loaded slot for state serialization (message thread; not RT-critical).
+    int          getBankSampleFrames (int slot) const;
+    int          getBankSampleChannels (int slot) const;
+    const float* getBankSampleChannelData (int slot, int channel) const;
+
     // Per-sample native tempo for warp/sync. The active slot for a track is its effective Sample
     // knob value; the Material Root BPM knob edits the active sample (message thread).
     int   getActiveBankSlotForTrack (int trackIndex) const;
@@ -218,6 +227,10 @@ private:
     EnvelopeFollower inputEnvelope_;
     MacroControls    macros_;
     ModEngine        modEngine_;
+
+    // Filter-page spectrum analyzer (selected track, post-filter). Fed only while the Filter page
+    // is showing in LP/BP/HP mode; idle otherwise (zero cost).
+    SpectrumAnalyzer filterAnalyzer_;
 
     ScreenModel screen_;
     Page        selectedPage_ = Page::Granular;

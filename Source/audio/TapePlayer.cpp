@@ -70,6 +70,7 @@ void TapePlayer::reset()
     lastRegionStart_     = -1.0e9f; // sentinel: first block primed as "boundaries still"
     lastRegionEnd_       = -1.0e9f;
     boundaryStillFrames_ = 0;
+    bounceDir_           = 1.0f;
     loopStartSm_.snap (loopStartTarget_);
     loopEndSm_.snap (loopEndTarget_);
 }
@@ -177,7 +178,8 @@ void TapePlayer::seekNormalized (float position01, int numFrames, float loopStar
     loopEndSm_.snap (loopEndTarget_);
 }
 
-void TapePlayer::retrigger (float position01, int numFrames, float loopStart01, float loopEnd01) noexcept
+void TapePlayer::retrigger (float position01, int numFrames, float loopStart01, float loopEnd01,
+                            float declickMs) noexcept
 {
     if (numFrames < 2)
         return;
@@ -201,7 +203,8 @@ void TapePlayer::retrigger (float position01, int numFrames, float loopStart01, 
     const bool wasPlaying = playing_ && ! followScrubTarget_ && ! scrubEngaged_;
     if (wasPlaying)
     {
-        const int fade    = std::max (32, static_cast<int> (sampleRate_ * 0.004)); // ~4 ms
+        const double declickSec = std::max (0.001, static_cast<double> (declickMs) * 0.001);
+        const int fade    = std::max (32, static_cast<int> (sampleRate_ * declickSec));
         wrapBlendFromPos_ = position_;
         wrapBlendLen_     = fade;
         blendFadeIn_      = fade;
@@ -221,6 +224,23 @@ void TapePlayer::retrigger (float position01, int numFrames, float loopStart01, 
     smoothInit_  = false;
     loopStartSm_.snap (loopStartTarget_);
     loopEndSm_.snap (loopEndTarget_);
+
+    // A deliberate jump (sampler trig / Loop Start Follow) is not a boundary sweep: reset the
+    // boundary-scrub tracker to the new region and disengage any active grain cloud, so the cloud
+    // doesn't smear/slow the audio after the jump. Without this, a moving Loop Start engages the
+    // sweep cloud and the jump lands on top of it (the "glitchy slowdown").
+    constexpr int kBoundaryHoldFramesMax = 1 << 20;
+    lastRegionStart_     = static_cast<float> (rs);
+    lastRegionEnd_       = static_cast<float> (re);
+    boundaryStillFrames_ = kBoundaryHoldFramesMax;
+    bounceDir_           = 1.0f;   // a fresh trig starts ping-pong going forward
+    if (scrubEngaged_)
+    {
+        scrubEngaged_ = false;
+        scrub_.disengage();
+    }
+    scrubMix_.snap (0.0f);
+
     playing_ = true;
 }
 
@@ -270,6 +290,31 @@ bool TapePlayer::wrapReadPosition (double& pos, double regionStart, double regio
         }
     }
     return true;
+}
+
+void TapePlayer::reflectReadPosition (double& pos, double regionStart, double regionEnd, double regionLen) noexcept
+{
+    if (regionLen < 2.0)
+        return;
+    // Bounce between the boundaries (ping-pong). Set the direction explicitly per boundary so an
+    // overshoot lands consistently; the loop guards against pathological speeds.
+    for (int guard = 0; guard < 8; ++guard)
+    {
+        if (pos > regionEnd)
+        {
+            pos        = regionEnd - (pos - regionEnd);
+            bounceDir_ = -1.0f;   // now travelling backward
+        }
+        else if (pos < regionStart)
+        {
+            pos        = regionStart + (regionStart - pos);
+            bounceDir_ = 1.0f;    // now travelling forward
+        }
+        else
+        {
+            break;
+        }
+    }
 }
 
 void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, int numSamples)
@@ -421,8 +466,9 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
         {
             // Engage only while a boundary is actively sweeping (not static), and when it has either
             // overtaken the head or the loop is small enough that single-stream looping would crackle.
-            // Static and normal-size loops with the head inside never smear.
-            if (boundaryStillFrames_ == 0 && (overtake || smallRegion))
+            // Static and normal-size loops with the head inside never smear. Disabled entirely during
+            // Loop Start Follow, where the rate-limited jumps do the chopping instead.
+            if (boundaryScrubEnabled_ && boundaryStillFrames_ == 0 && (overtake || smallRegion))
             {
                 scrub_.setSpawnLength (grainLen); // small loop -> loop tone; larger -> scrub smear
                 scrubEngaged_ = true;
@@ -433,7 +479,7 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
         else
         {
             scrub_.setSpawnLength (grainLen); // keep grains matched to the evolving loop length
-            if (boundaryStillFrames_ >= holdFrames)
+            if (boundaryStillFrames_ >= holdFrames || ! boundaryScrubEnabled_)
             {
                 // Boundary settled — hand back to the dry single stream. Always glide the dry head
                 // onto the boundary (where the cloud's newest grains are) through the seam blend, so
@@ -459,7 +505,9 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
         // snaps it back onto the boundary, so freezing here is safe.
         if (! scrubEngaged_)
         {
-            if (! wrapReadPosition (position_, regionStart, regionEnd, regionLen))
+            if (loopBounce_)
+                reflectReadPosition (position_, regionStart, regionEnd, regionLen);
+            else if (! wrapReadPosition (position_, regionStart, regionEnd, regionLen))
                 return;
         }
 
@@ -507,7 +555,7 @@ void TapePlayer::process (const SampleBuffer& buffer, float* outL, float* outR, 
         outR[i] += rawR * (1.0f - mix) + grainR * mix;
 
         if (! scrubEngaged_)
-            position_ += static_cast<double> (speed_);
+            position_ += static_cast<double> (speed_) * (loopBounce_ ? static_cast<double> (bounceDir_) : 1.0);
     }
 }
 

@@ -40,11 +40,9 @@ void Track::reset()
     playing_                   = false;
     ignoreStoppedPlayheadSeek_ = false;
     samplerTrigPending_        = false;
-    sliceCursor_               = 0;
-    samplerRegionLo_           = 0.0f;
-    samplerRegionHi_           = 1.0f;
     followLoopStartLast_       = -1.0f;
-    followSeekPending_         = false;
+    followArmed_               = true;
+    followStableSamples_       = 0;
 }
 
 void Track::trigger()
@@ -101,15 +99,19 @@ void Track::replaceMaterialStereo (const float* left, const float* right, int nu
 
 void Track::updateParameters (const ParameterState& state, int trackIndex, bool materialPlayheadScrub,
                               double hostBpm, const GranularBlockTiming& granularTiming,
-                              double engineSampleRate)
+                              double engineSampleRate, int numSamples)
 {
     const int t = trackIndex;
     auto get = [&state, t] (ParameterId id) { return state.effective (t, id); };
 
-    // Sampler machine: Digitakt-style voice. Plays the loop region once per step trig (one-shot, no
-    // loop) and runs the tape only (granular cloud is silenced). Torso machine keeps looping + grains.
-    const bool sampler   = get (ParameterId::MaterialMachine) > 0.5f;
-    const bool sliceMode = sampler && get (ParameterId::MaterialSampleMode) > 0.5f;
+    // Sampler machine: sequencer-triggered voice. Sample Mode chooses how each trig plays the loop
+    // region: One-Shot (once), Loop Forward, Loop Reverse, or Loop Fwd/Back (ping-pong). Torso
+    // machine is unaffected (continuous forward loop).
+    const bool sampler    = get (ParameterId::MaterialMachine) > 0.5f;
+    const int  sampleMode = sampler ? map::materialSampleModeIndex (get (ParameterId::MaterialSampleMode)) : 1;
+    const bool oneShot     = sampler && sampleMode == 0;
+    const bool loopReverse = sampler && sampleMode == 2;
+    const bool loopBounce  = sampler && sampleMode == 3;
 
     setCaptureArmed (get (ParameterId::CaptureArm) > 0.5f);
 
@@ -155,40 +157,58 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
         map::snapLoopPair01 (loopLo, loopHi, map::materialGridStep01 (gridN, gridBpm, gDurSec));
     }
 
-    // Loop Start Follow: detect when Loop Start has settled (stopped moving). followMovedThisBlock
-    // stays true while it's sweeping so we only snap the playhead once motion stops (after an
-    // automated / loop-snapped Loop Start lands on a new grid step), not every block mid-sweep.
-    const bool loopFollow = get (ParameterId::LoopStartFollow) > 0.5f;
-    bool followMovedThisBlock = false;
+    // Loop Start Follow: fire ONE crisp playhead jump per Loop Start change. Fire on the first
+    // changed block (immediate, on-beat for a stepped random S&H), then lock out re-triggering until
+    // the value has been stable for a short window — so a still-moving (slewed/continuous) value
+    // can't machine-gun retriggers into jitter.
+    const bool  loopFollow = get (ParameterId::LoopStartFollow) > 0.5f;
+    const int   kFollowRearmSamples =
+        std::max (1, static_cast<int> (engineSampleRate * 0.015)); // 15 ms stable to re-arm
+    bool followReadyToSeek = false;
     if (loopFollow)
     {
-        if (std::fabs (loopLo - followLoopStartLast_) > 1.0e-4f)
+        if (followLoopStartLast_ < 0.0f)
+        {
+            followLoopStartLast_ = loopLo;   // just enabled: arm without an initial jump
+            followArmed_         = true;
+            followStableSamples_ = 0;
+        }
+        else if (std::fabs (loopLo - followLoopStartLast_) > 1.0e-4f)
         {
             followLoopStartLast_ = loopLo;
-            followSeekPending_   = true;
-            followMovedThisBlock = true;
+            followStableSamples_ = 0;        // moving: hold off re-arming
+            if (followArmed_)
+            {
+                followReadyToSeek = true;     // fire once at the start of this change burst
+                followArmed_      = false;     // lock out until it settles again
+            }
+        }
+        else
+        {
+            followStableSamples_ += std::max (0, numSamples);
+            if (followStableSamples_ >= kFollowRearmSamples)
+                followArmed_ = true;          // settled: ready for the next change
         }
     }
     else
     {
-        followSeekPending_   = false;
-        followLoopStartLast_ = loopLo;
+        followArmed_         = true;
+        followLoopStartLast_ = -1.0f;        // sentinel so re-enabling doesn't jump
+        followStableSamples_ = 0;
     }
 
-    // In Slice mode the tape plays the persisted current-slice region (set on each trig), not the
-    // Loop Start/End knobs; OneShot/Torso use the loop region as before.
-    float regionLo = loopLo, regionHi = loopHi;
-    if (sliceMode)
-    {
-        regionLo = samplerRegionLo_;
-        regionHi = samplerRegionHi_;
-    }
+    const float regionLo = loopLo, regionHi = loopHi;
 
-    tape.setSpeedRatio (speedRatio);
+    // Loop Reverse plays the loop region backward (negative speed); ping-pong starts forward and
+    // alternates inside the TapePlayer. One-Shot stops at the loop end; everything else loops.
+    tape.setSpeedRatio (loopReverse ? -speedRatio : speedRatio);
     tape.setLoopRegion (regionLo, regionHi);
     tape.setLevel (1.0f);
-    // Sampler = one-shot (stop at loop/slice end); Torso = continuous loop.
-    tape.setLoopMode (! sampler);
+    tape.setLoopMode (! oneShot);     // Torso + Sampler loop modes loop; only One-Shot stops at end
+    tape.setLoopBounce (loopBounce);  // ping-pong (reflect at boundaries)
+    // With Loop Start Follow the playhead jumps do the chopping, so turn off the boundary grain-cloud
+    // scrub (it would smear between the rate-limited jumps and sound jittery).
+    tape.setBoundaryScrubEnabled (! loopFollow);
     const float xfadeSec = map::loopFadeSeconds (get (ParameterId::MaterialLoopXfade));
     tape.setLoopFades (xfadeSec, xfadeSec);
 
@@ -204,49 +224,31 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     // Follow knob while gesturing (tape keeps running); seek above updates scrubTarget first.
     tape.setFollowScrubTarget (materialPlayheadScrub);
 
-    // Sampler-machine trig from the step sequencer: re-seek the read head to the loop start (or the
-    // p-locked position) and re-fire from there, so every step restarts the sample cleanly.
+    // Sampler-machine trig from the step sequencer: re-seek the read head and re-fire so every step
+    // restarts cleanly. Reverse mode starts at the loop end (and plays backward); forward / ping-pong
+    // start at the loop start. A p-locked position overrides the default start.
     if (samplerTrigPending_)
     {
-        float trigLo = loopLo, trigHi = loopHi, pos;
-        if (sliceMode)
-        {
-            // Advance the round-robin slice and play it once (Phase 4 p-locks will override the index).
-            sliceMap_.setCount (map::materialSliceCount (get (ParameterId::MaterialSliceCount)));
-            const int idx = sliceCursor_ % sliceMap_.count();
-            samplerRegionLo_ = sliceMap_.start01 (idx);
-            samplerRegionHi_ = sliceMap_.end01 (idx);
-            sliceCursor_     = (sliceCursor_ + 1) % sliceMap_.count();
-            trigLo = samplerRegionLo_;
-            trigHi = samplerRegionHi_;
-            pos    = trigLo;
-            tape.setLoopRegion (trigLo, trigHi); // apply the slice region for this one-shot now
-        }
-        else
-        {
-            pos = samplerTrigPos01_ < 0.0f ? loopLo : std::clamp (samplerTrigPos01_, 0.0f, 1.0f);
-        }
+        float pos = samplerTrigPos01_ < 0.0f ? (loopReverse ? loopHi : loopLo)
+                                             : std::clamp (samplerTrigPos01_, 0.0f, 1.0f);
         // Crossfaded read-head jump (declick) rather than a hard seek; the gate just opens (it ramps
         // up from silence only when the track was stopped, so no level discontinuity either way).
-        tape.retrigger (pos, matFrames, trigLo, trigHi);
+        tape.retrigger (pos, matFrames, loopLo, loopHi);
         engine_.getGranular().setActive (true);
         gate_.gateOn();
         playing_                   = true;
         ignoreStoppedPlayheadSeek_ = true;
         samplerTrigPending_        = false;
         // The trig already placed the read head; don't let Follow also snap this resting position.
-        followSeekPending_   = false;
+        followArmed_         = false;
         followLoopStartLast_ = loopLo;
+        followStableSamples_ = 0;
     }
 
-    // Loop Start Follow: once Loop Start has settled, snap the playing read head to it (declick
-    // crossfade jump). Skipped in Slice mode (the play region is the slice, not the loop knobs).
-    if (loopFollow && followSeekPending_ && ! followMovedThisBlock
-        && ! materialPlayheadScrub && ! sliceMode && playing_)
-    {
-        tape.retrigger (loopLo, matFrames, loopLo, loopHi);
-        followSeekPending_ = false;
-    }
+    // Loop Start Follow: crisp single splice to the new Loop Start (short equal-power declick — a
+    // longer crossfade flams the old chunk against the new). One fire per change (armed/lockout above).
+    if (followReadyToSeek && ! materialPlayheadScrub && playing_)
+        tape.retrigger (loopLo, matFrames, loopLo, loopHi, 5.0f);
 
     GranularEngine::Params gp;
     gp.position = get (ParameterId::GrainPosition);
@@ -270,8 +272,7 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
     // Playhead follow: grains can track the moving tape position (GrainFollow).
     gp.playhead01 = getTapePositionNormalized();
     gp.follow     = get (ParameterId::GrainFollow);
-    // Granulate the region the tape is actually playing (the slice in Slice mode, else the loop),
-    // so in Sampler mode grains track the current one-shot instead of the static loop knobs.
+    // Granulate the loop region the tape is playing so grains track the current voice.
     gp.loopStart01        = regionLo;
     gp.loopEnd01          = regionHi;
     gp.grainPattern       = get (ParameterId::GrainPattern);
@@ -288,9 +289,9 @@ void Track::updateParameters (const ParameterState& state, int trackIndex, bool 
         engine_.setGrainMix (gp.mix);
 
     // Sampler machine: the granular cloud is part of the per-step voice, not a free-running drone.
-    // Spawn grains only while the one-shot is sounding; when the tape stops at the slice/loop end,
-    // stop spawning (in-flight grains finish naturally, leaving a granular tail). GrainMix blends it
-    // against the dry one-shot, so the cloud is fully usable — just gated to the hit.
+    // Spawn grains only while the voice is sounding; when the tape stops (One-Shot reaching the loop
+    // end), stop spawning (in-flight grains finish naturally, leaving a granular tail). GrainMix
+    // blends it against the dry voice, so the cloud is fully usable — just gated to the hit.
     if (sampler)
         engine_.getGranular().setActive (tape.isPlaying());
 

@@ -161,6 +161,16 @@ struct ScreenModel
     std::array<float, kFilterBands> filterBandGains {};
     bool filterSpectralMode = false;
 
+    // Filter page (LP/BP/HP mode): Pro-Q3-style response curve + live spectrum analyzer, both
+    // computed in the engine (raw C++). They share a log frequency axis (20 Hz..20 kHz) and are
+    // normalized 0..1 vertically so the UI plots them directly. Valid only when !filterSpectralMode.
+    static constexpr int kFilterCurveBins    = 128;
+    static constexpr int kFilterSpectrumBins = 96;   // keep == SpectrumAnalyzer::kNumBins
+    std::array<float, kFilterCurveBins>    filterResponse {};   // filter magnitude curve, 0..1
+    std::array<float, kFilterSpectrumBins> filterSpectrum {};   // live analyzer, 0..1
+    float filterCutoffX01 = 0.5f;   // cutoff node x along the log-freq axis (0..1)
+    float filterNodeY01   = 0.5f;   // curve height at cutoff (0..1) for the node marker
+
     // Granular page: per-grain overlay on the material waveform (pool size).
     std::array<GrainDisplaySlot, kGrainsPerTrack> grainDisplay {};
     // Knob-aligned grain window (no spray); LCD draws this for snappy feedback vs active grains.

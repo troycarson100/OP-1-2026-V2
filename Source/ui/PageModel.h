@@ -33,6 +33,12 @@ public:
     static ParameterId parameterForSlot (Page page, int slot, int granularEncoderPage = 0);
 
     static int parameterCount (Page page, int granularEncoderPage = 0);
+
+    // Modulation destination for a target page + encoder (0..kMaxModMappingEncoders-1). Distinct
+    // from parameterForSlot because the Material page has two encoder sub-pages: this flattens its
+    // most musical destinations (incl. Sample Slot / Sample Mode) into one 8-slot mod list so they
+    // are reachable on the Mod page. Other pages fall through to parameterForSlot.
+    static ParameterId modDestinationForSlot (Page page, int enc);
 };
 
 } // namespace sculpt

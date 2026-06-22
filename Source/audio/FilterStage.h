@@ -19,10 +19,14 @@ public:
 
     void process (float* left, float* right, int numSamples);
 
+    // Analog 12 dB/oct SVF magnitude response in dB at freqHz, for the morphed LP/BP/HP filter
+    // (mode01: 0=LP, 0.5=BP, 1=HP). Static so the engine can plot the curve with no instance.
+    static float responseDb (float freqHz, float cutoffHz, float q, float mode01);
+
 private:
     struct ChannelState { float ic1 = 0.0f; float ic2 = 0.0f; };
 
-    float processSample (ChannelState& state, float in, float g, float k,
+    float processSample (ChannelState& state, float in, float g, float k, float drive,
                          float& outBP, float& outHP) const;
 
     double sampleRate_ = 44100.0;

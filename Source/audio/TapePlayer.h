@@ -27,6 +27,14 @@ public:
     void setSpeedRatio (float ratio)   { speed_ = ratio; }
     void setLoopRegion (float start01, float end01);
     void setLoopMode (bool shouldLoop) { loopMode_ = shouldLoop; }
+    // Ping-pong looping: reflect at the loop boundaries (flip direction) instead of wrapping.
+    // Speed should be set positive; the player alternates direction internally. Off = normal wrap.
+    void setLoopBounce (bool shouldBounce) noexcept
+    {
+        if (shouldBounce && ! loopBounce_)
+            bounceDir_ = 1.0f;
+        loopBounce_ = shouldBounce;
+    }
     void setLevel (float gain)         { level_ = gain; }
 
     // Loop crossfade lengths in seconds: attack = fade-in of the new loop head, release =
@@ -39,9 +47,15 @@ public:
     void seekNormalized (float position01, int numFrames, float loopStart01, float loopEnd01);
 
     // Sampler-style retrigger: jump the read head to position01 within the loop and keep playing,
-    // crossfading from the old head to the new one over a short declick window (no click even when
-    // the track is already sounding). Used by the step sequencer for Sampler-machine tracks.
-    void retrigger (float position01, int numFrames, float loopStart01, float loopEnd01) noexcept;
+    // crossfading from the old head to the new one over declickMs (equal-power), so the jump is
+    // click-free even while sounding. A longer declick makes a smoother "splice" (Loop Start Follow);
+    // a short one keeps trig transients tight. Used by the step sequencer + Loop Start Follow.
+    void retrigger (float position01, int numFrames, float loopStart01, float loopEnd01,
+                    float declickMs = 4.0f) noexcept;
+
+    // Boundary-drag grain-cloud scrub: on by default. Loop Start Follow turns it OFF so the cloud
+    // doesn't smear between the (rate-limited) Follow jumps — the jumps alone do the chop.
+    void setBoundaryScrubEnabled (bool enabled) noexcept { boundaryScrubEnabled_ = enabled; }
 
     // While playing + user scrubs the playhead, follow the target with slew limiting instead
     // of snapping each block (avoids zipper/clicks). Call each parameter update before seekNormalized.
@@ -52,6 +66,8 @@ public:
 
 private:
     bool wrapReadPosition (double& pos, double regionStart, double regionEnd, double regionLen) noexcept;
+    // Ping-pong: reflect pos back into the region at each boundary and flip bounceDir_.
+    void reflectReadPosition (double& pos, double regionStart, double regionEnd, double regionLen) noexcept;
 
     double position_  = 0.0;   // in frames
     float  speed_     = 1.0f;
@@ -59,6 +75,8 @@ private:
     float  loopEndTarget_   = 1.0f;
     float  level_     = 1.0f;
     bool   loopMode_  = true;
+    bool   loopBounce_ = false;   // ping-pong: reflect at boundaries instead of wrapping
+    float  bounceDir_  = 1.0f;    // current ping-pong direction (+1 forward, -1 backward)
     bool   playing_   = false;
 
     double sampleRate_ = 44100.0;
@@ -104,6 +122,7 @@ private:
     TapeGrainScrub scrub_;
     SmoothedValue  scrubMix_;          // 0 = dry single stream, 1 = grain cloud
     bool           scrubEngaged_ = false;
+    bool           boundaryScrubEnabled_ = true; // off during Loop Start Follow (jumps do the chop)
     float          lastRegionStart_ = -1.0e9f; // prev-sample boundary positions (frames), to detect
     float          lastRegionEnd_   = -1.0e9f; // motion of either boundary; sentinel primes "still"
     int            boundaryStillFrames_ = 0;

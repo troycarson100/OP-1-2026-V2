@@ -201,7 +201,7 @@ void ModEngine::apply (ParameterState& params, float inputEnv01, int numSamples,
                 const auto page = static_cast<Page> (pg);
                 for (int enc = 0; enc < kMaxModMappingEncoders; ++enc)
                 {
-                    const ParameterId id = PageModel::parameterForSlot (page, enc);
+                    const ParameterId id = PageModel::modDestinationForSlot (page, enc);
                     if (id == ParameterId::Count)
                         continue;
 
